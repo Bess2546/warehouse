@@ -1,0 +1,13 @@
+{
+  "name": "ware_house",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "concurrently \"npm --prefix back-end start\" \"npm --prefix front-end/my-app run dev\"",
+    "start:backend": "npm --prefix back-end start",
+    "start:frontend": "npm --prefix front-end/my-app run dev"
+  },
+  "type": "commonjs",
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

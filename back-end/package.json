@@ -1,0 +1,19 @@
+{
+  "name": "back-end",
+  "version": "1.0.0",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "ts-node src/index.ts"
+  },
+  "dependencies": {
+    "dotenv": "^16.0.0",
+    "mongodb": "^6.0.0",
+    "mqtt": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/mqtt": "^0.0.34",
+    "@types/node": "^24.10.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  }
+}
