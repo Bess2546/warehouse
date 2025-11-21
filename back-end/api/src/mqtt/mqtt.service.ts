@@ -1,3 +1,4 @@
+// src/mqtt/mqtt.service.ts
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { connect, MqttClient } from 'mqtt';
 import { TagService } from '../tag/tag.service';
@@ -13,13 +14,14 @@ export class MqttService implements OnModuleInit {
   onModuleInit() {
     console.log('[MqttService] Connecting to MQTT...');
 
-    this.client = connect('mqtt://127.0.0.1:1883'); // เปลี่ยนตาม broker ของคุณ
+    // ถ้า Mosquitto อยู่เครื่องอื่น เปลี่ยน IP ตรงนี้
+    this.client = connect('mqtt://127.0.0.1:1883');
 
     this.client.on('connect', () => {
       console.log('[MqttService] MQTT connected');
       this.client.subscribe('warehouse/ble/+/snapshot', (err) => {
         if (err) console.error('[MqttService] Subscribe error:', err);
-        else console.log('[MqttService] Subscribed: eye/tags/#');
+        else console.log('[MqttService] Subscribed: warehouse/ble/+/snapshot');
       });
     });
 
@@ -29,15 +31,21 @@ export class MqttService implements OnModuleInit {
 
       try {
         const json = JSON.parse(text);
-        for (const tag of json.tags){
-          await this.tagService.saveFromMqtt({
-            gw_id: json.gw_id,
-            mac: tag.mac,
-            rssi: tag.rssi,
-            ts: Date.now(),
-          });
+
+        if (!Array.isArray(json.tags)) {
+          console.warn('[MqttService] json.tags is not array:', json);
+          return;
         }
-        
+
+        // แปลงเป็นรูปที่ TagService ต้องการ
+        const tags = json.tags.map((t: any) => ({
+          mac: t.mac,
+          rssi: t.rssi,
+          ts: Date.now(),
+        }));
+
+        // ใช้ snapshot ฟังก์ชันแทนการ save ทีละ tag
+        await this.tagService.updateGatewaySnapshot(json.gw_id, tags);
       } catch (err) {
         console.error('[MqttService] Error parsing/saving:', err);
       }
