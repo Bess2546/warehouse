@@ -1,6 +1,7 @@
-import { Controller, Get } from '@nestjs/common';
+// src/tag/tag.controller.ts
+import { Controller, Get, Query } from '@nestjs/common';
 import { TagService } from './tag.service';
-import { count } from 'console';
+
 
 @Controller('tags')
 export class TagController {
@@ -19,5 +20,20 @@ export class TagController {
   @Get('events')
   getEvents() {
     return this.tagService.getEvents();
+  }
+
+  @Get('summary')
+  getSummary(){
+    return this.tagService.getDashboardSummary();
+  }
+
+  @Get('present')
+  getPresent(){
+    return this.tagService.getPresentTags();
+  }
+
+  @Get('timeline')
+  getTimeline(@Query('limit') limit?: string){
+    return this.tagService.getInOutTimeline(limit ? Number(limit) : 50);
   }
 }

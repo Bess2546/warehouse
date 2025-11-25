@@ -40,6 +40,67 @@ export class TagService {
       .toArray();
   }
 
+  async getDashboardSummary() {
+    if (!this.db) return null;
+
+    const tagStateCol = this.db.collection('tag_state');
+    const tagEventsCol = this.db.collection('tag_events');
+
+    const present_count = await tagStateCol.countDocuments({ present: true });
+    const total_tags = await tagEventsCol.countDocuments({});
+
+    const byZoneAgg = await tagStateCol
+      .aggregate([
+        { $match: { present: true } },
+        { $group: { _id: '$zone', count: { $sum: 1 } } },
+      ])
+      .toArray();
+
+    const by_zone: Record<string, number> = {};
+    for (const z of byZoneAgg) {
+      by_zone[z._id || 'Unknown'] = z.count;
+    }
+
+    // นับเข้า/ออกใน 24 ชั่วโมงล่าสุด จาก tag_events
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const in24 = await tagEventsCol.countDocuments({
+      type: 'enter',
+      ts: { $gte: since },
+    });
+    const out24 = await tagEventsCol.countDocuments({
+      type: 'exit',
+      ts: { $gte: since },
+    });
+
+    return {
+      present_count,
+      total_tags,
+      by_zone,
+      last24h: { in: in24, out: out24 },
+    };
+  }
+
+  // ดึงรายการ tag ที่อยู่ในคลังตอนนี้ (present=true)
+  async getPresentTags() {
+    if (!this.db) return [];
+    return this.db
+      .collection('tag_state')
+      .find({ present: true })
+      .sort({ lastSeen: -1 })
+      .toArray();
+  }
+
+  // ดึง timeline เข้า/ออกล่าสุด (เฉพาะ enter/exit/move ถ้าต้องการ)
+  async getInOutTimeline(limit = 50) {
+    if (!this.db) return [];
+    return this.db
+      .collection('tag_events')
+      .find({ type: { $in: ['enter', 'exit'] } })
+      .sort({ ts: -1 })
+      .limit(limit)
+      .toArray();
+  }
+
   // ---------------- WRITE (old per-tag method, ยังเก็บไว้ใช้ได้) ----------------
   async saveFromMqtt(payload: any) {
     if (!this.db) {
