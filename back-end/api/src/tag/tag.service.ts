@@ -47,7 +47,7 @@ export class TagService {
     const tagEventsCol = this.db.collection('tag_events');
 
     const present_count = await tagStateCol.countDocuments({ present: true });
-    const total_tags = await tagEventsCol.countDocuments({});
+    const total_tags = await tagStateCol.countDocuments({});
 
     const byZoneAgg = await tagStateCol
       .aggregate([
@@ -155,14 +155,19 @@ export class TagService {
     }
 
     const now = new Date();
-    const MISS_THRESHOLD = 3;
+
+    // ===== CONFIG สำหรับ timeout + RSSI guard =====
+    const MIN_MISS_BEFORE_EXIT = 5; // ต้อง miss อย่างน้อยกี่รอบถึงจะพิจารณา exit
+    const EXIT_BASE_TIMEOUT_MS = 90_000; // หายไปอย่างน้อย 30 วิ ถึงจะออก
+    const EXIT_STRONG_EXTRA_MS = 90_000; // ถ้า RSSI แรง (> -65) บวกเวลาเพิ่มอีก 20 วิ
+    // =============================================
+
     const macList = tags.map((t) => t.mac);
 
     const tagStateCol = this.db.collection('tag_state');
     const tagEventsCol = this.db.collection('tag_events');
 
-    // ---------- 1) เตรียมข้อมูลเดิมใน gateway นี้ ----------
-    // เอา state เดิมของทุก tag ที่อยู่ใน gateway นี้มาเก็บเป็น map
+    // ---------- 1) เตรียม state เดิมใน gateway นี้ ----------
     const prevStatesArr = await tagStateCol.find({ zone: gwId }).toArray();
 
     const prevMap = new Map<string, any>();
@@ -170,22 +175,38 @@ export class TagService {
       prevMap.set(s.tagId, s);
     }
 
-    // ---------- 2) จัดการ tag ที่ไม่อยู่ใน snapshot รอบนี้ (เพิ่ม missCount, detect exit) ----------
+    // ---------- 2) tag ที่ "หาย" จาก snapshot รอบนี้ ----------
     const missingTags = prevStatesArr.filter((s) => !macList.includes(s.tagId));
 
     for (const prev of missingTags) {
       const newMiss = (prev.missCount || 0) + 1;
 
-      // อัปเดต missCount
+      // อัปเดต missCount ก่อน
       await tagStateCol.updateOne(
         { tagId: prev.tagId },
-        {
-          $set: { missCount: newMiss },
-        },
+        { $set: { missCount: newMiss } },
       );
 
-      // ถ้า missCount เพิ่งถึง threshold -> ถือว่าออก
-      if (newMiss >= MISS_THRESHOLD && prev.present !== false) {
+      // คำนวณเวลาที่เงียบไปตั้งแต่ lastSeen
+      const lastSeenMs = prev.lastSeen ? new Date(prev.lastSeen).getTime() : 0;
+      const silenceMs = now.getTime() - lastSeenMs;
+
+      // คำนวณ timeout ตาม RSSI (RSSI guard)
+      const prevRssi = prev.rssi ?? -999;
+      let timeoutMs = EXIT_BASE_TIMEOUT_MS;
+      if (prevRssi > -65) {
+        // ถ้าเคยแรงมาก แปลว่าอยู่ใกล้ → ให้ทนมากขึ้น
+        timeoutMs += EXIT_STRONG_EXTRA_MS;
+      }
+
+      // เงื่อนไข exit:
+      // 1) miss อย่างน้อย MIN_MISS_BEFORE_EXIT ครั้ง
+      // 2) หายเกิน timeoutMs
+      if (
+        newMiss >= MIN_MISS_BEFORE_EXIT &&
+        silenceMs >= timeoutMs &&
+        prev.present !== false
+      ) {
         await tagStateCol.updateOne(
           { tagId: prev.tagId },
           {
@@ -200,18 +221,22 @@ export class TagService {
         await tagEventsCol.insertOne({
           tagId: prev.tagId,
           zone: gwId,
-          type: 'exit', // <- ออกจากคลัง / ออกจาก gateway นี้
+          type: 'exit',
           ts: now,
           createdAt: now,
         });
 
         console.log(
-          `[TagService] EXIT tag=${prev.tagId} gw=${gwId} missCount=${newMiss}`,
+          `[TagService] EXIT tag=${prev.tagId} gw=${gwId} missCount=${newMiss} silenceMs=${silenceMs}`,
+        );
+      } else {
+        console.log(
+          `[TagService] MISS tag=${prev.tagId} gw=${gwId} miss=${newMiss} silenceMs=${silenceMs}ms (wait more)`,
         );
       }
     }
 
-    // ---------- 3) จัดการ tag ที่อยู่ใน snapshot รอบนี้ (enter/move + seen) ----------
+    // ---------- 3) tag ที่อยู่ใน snapshot รอบนี้ ----------
     for (const t of tags) {
       const tagId = t.mac;
       const rssi = t.rssi;
@@ -239,7 +264,7 @@ export class TagService {
             rssi,
             present: true,
             lastSeen: ts,
-            missCount: 0,
+            missCount: 0, // reset เพราะเจอแล้ว
           },
           $setOnInsert: {
             firstSeen: ts,
@@ -260,7 +285,6 @@ export class TagService {
         );
       }
 
-      // log event ตามประเภท
       await tagEventsCol.insertOne({
         tagId,
         zone: gwId,
