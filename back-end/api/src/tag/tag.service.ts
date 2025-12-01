@@ -2,6 +2,7 @@
 import { Injectable } from '@nestjs/common';
 import { MongoClient } from 'mongodb';
 import { decodeEyeRaw } from '../eye/eye-decode';
+import { detectSourceType, macToTagUid } from 'src/common/source-type';
 
 @Injectable()
 export class TagService {
@@ -24,17 +25,216 @@ export class TagService {
       });
   }
 
-  // ---------------- READ ----------------
+async handleGatewaySnapshot(payload: any) {
+  if (!this.db) {
+    console.warn('[TagService] DB not ready');
+    return;
+  }
 
+  const TagScanCol = this.db.collection('TagScanProcessed');
+  const TagLastCol = this.db.collection('TagLastSeenProcessed');
+
+  const sourceType = payload.SourceType;
+  const sourceId = payload.SourceId;
+  const eventTime = payload.EventTime ? new Date(payload.EventTime) : new Date();
+  const orgId = payload.OrgId ?? 0;
+
+  const tags = payload.Tags || [];
+
+  // ---------- 1) เตรียม tags พร้อม BatteryVoltageMv ที่ decode แล้ว ----------
+  const processedTags = tags.map((t: any) => {
+    let batteryMv = t.BatteryVoltageMv ?? null;
+
+    // ถ้า payload ยังไม่มี BatteryVoltageMv แต่มี raw → decode เอาแค่แบต
+    if (batteryMv == null && t.raw) {
+      try {
+        const decoded = decodeEyeRaw(t.raw, { rssi: t.Rssi });
+        if (decoded && decoded.batteryMv !== undefined) {
+          batteryMv = decoded.batteryMv;
+        }
+      } catch (e) {
+        console.warn('[TagService] decodeEyeRaw error for tag', t.TagUid, e);
+      }
+    }
+
+    return {
+      ...t,
+      BatteryVoltageMv: batteryMv,
+    };
+  });
+
+  // ---------- 2) Save ลง TagScanProcessed (เก็บทั้ง event + แบต) ----------
+  await TagScanCol.insertOne({
+    OrgId: orgId,
+    SourceType: sourceType,
+    SourceId: sourceId,
+    EventTime: eventTime,
+    Latitude: payload.Latitude ?? null,
+    Longitude: payload.Longitude ?? null,
+    Tags: processedTags,
+    CreatedAt: new Date(),
+  });
+
+  // ---------- 3) ถ้าไม่ใช่ M5 → อัปเดต last seen + battery แค่นั้น (ไม่มี enter/exit) ----------
+  if (sourceType !== 'M5') {
+    for (const t of processedTags) {
+      await TagLastCol.updateOne(
+        { TagUid: t.TagUid, OrgId: orgId },
+        {
+          $set: {
+            TagUid: t.TagUid,
+            OrgId: orgId,
+            LastRssi: t.Rssi,
+            LastSeenTime: eventTime,
+            LastSourceType: sourceType,
+            LastSourceId: sourceId,
+            BatteryVoltageMv: t.BatteryVoltageMv ?? null,
+            Present: true,
+          },
+          $setOnInsert: {
+            FirstSeenTime: eventTime,
+          },
+        },
+        { upsert: true },
+      );
+    }
+
+    console.log(
+      `[TagService] Snapshot (non-M5) processed from ${sourceType}/${sourceId}`,
+    );
+    return;
+  }
+
+  // ---------- 4) ถ้าเป็น M5 → ใช้ logic เข้า/ออกคลังด้วย ----------
+  const zone = sourceId; // ใช้ SourceId ของ M5 แทน zone เช่น GW_A01
+
+  // ดึง state เดิมของ tag ที่เคยอยู่ในโซนนี้
+  const prevStates = await TagLastCol
+    .find({ OrgId: orgId, LastZone: zone })
+    .toArray();
+
+  const prevMap = new Map<string, any>();
+  for (const s of prevStates) {
+    prevMap.set(s.TagUid, s);
+  }
+
+  const nowMs = Date.now();
+  const EXIT_TIMEOUT_MS = 30_000;
+  const MIN_MISS_BEFORE_EXIT = 3;
+
+  const newTagUids = processedTags.map((t) => t.TagUid);
+
+  // ---------- 4.1 ตรวจ tag ที่ "หาย" ไปจาก snapshot รอบนี้ (candidate for exit) ----------
+  for (const prev of prevStates) {
+    if (!newTagUids.includes(prev.TagUid)) {
+      const newMiss = (prev.MissCount ?? 0) + 1;
+
+      await TagLastCol.updateOne(
+        { TagUid: prev.TagUid, OrgId: orgId },
+        { $set: { MissCount: newMiss } },
+      );
+
+      const lastSeenMs = prev.LastSeenTime
+        ? new Date(prev.LastSeenTime).getTime()
+        : 0;
+      const silenceMs = nowMs - lastSeenMs;
+
+      if (
+        newMiss >= MIN_MISS_BEFORE_EXIT &&
+        silenceMs >= EXIT_TIMEOUT_MS &&
+        prev.Present !== false
+      ) {
+        await TagLastCol.updateOne(
+          { TagUid: prev.TagUid, OrgId: orgId },
+          {
+            $set: {
+              Present: false,
+              LastExit: new Date(),
+            },
+            $inc: { ExitCount: 1 },
+          },
+        );
+
+        console.log(
+          `[TagService] EXIT TagUid=${prev.TagUid} zone=${zone} miss=${newMiss} silence=${silenceMs}ms`,
+        );
+      } else {
+        console.log(
+          `[TagService] MISS TagUid=${prev.TagUid} zone=${zone} miss=${newMiss} silence=${silenceMs}ms`,
+        );
+      }
+    }
+  }
+
+  // ---------- 4.2 จัดการ tag ที่เจอใน snapshot รอบนี้ (enter / move / seen) ----------
+  for (const t of processedTags) {
+    const tagUid = t.TagUid;
+    const prev = prevMap.get(tagUid);
+
+    let eventType: 'enter' | 'move' | 'seen' = 'seen';
+
+    if (!prev || prev.Present === false) {
+      eventType = 'enter';
+    } else if (prev.LastZone !== zone) {
+      eventType = 'move';
+    } else {
+      eventType = 'seen';
+    }
+
+    await TagLastCol.updateOne(
+      { TagUid: tagUid, OrgId: orgId },
+      {
+        $set: {
+          TagUid: tagUid,
+          OrgId: orgId,
+          LastRssi: t.Rssi,
+          LastSeenTime: eventTime,
+          LastSourceType: 'M5',
+          LastSourceId: zone,
+          LastZone: zone,
+          BatteryVoltageMv: t.BatteryVoltageMv ?? null,
+          Present: true,
+          MissCount: 0, // reset เพราะเจอแล้ว
+        },
+        $setOnInsert: {
+          FirstSeenTime: eventTime,
+          EnterCount: 0,
+          ExitCount: 0,
+        },
+      },
+      { upsert: true },
+    );
+
+    if (eventType === 'enter') {
+      await TagLastCol.updateOne(
+        { TagUid: tagUid, OrgId: orgId },
+        {
+          $set: { LastEnter: eventTime },
+          $inc: { EnterCount: 1 },
+        },
+      );
+    }
+
+    console.log(
+      `[TagService] ${eventType.toUpperCase()} TagUid=${tagUid} zone=${zone} batt=${t.BatteryVoltageMv ?? 'null'}`,
+    );
+  }
+
+  console.log(
+    `[TagService] Snapshot (M5) processed for zone=${sourceId}, tags=${processedTags.length}`,
+  );
+}
+
+  // ---------------- READ ----------------
   async getActiveTags() {
     if (!this.db) return [];
-    return this.db.collection('tag_state').find({ present: true }).toArray();
+    return this.db.collection('TagLastSeenProcessed').find({ present: true }).toArray();
   }
 
   async getEvents() {
     if (!this.db) return [];
     return this.db
-      .collection('tag_events')
+      .collection('TagScanProcessed')
       .find({})
       .sort({ ts: -1 })
       .limit(50)
@@ -44,8 +244,8 @@ export class TagService {
   async getDashboardSummary() {
     if (!this.db) return null;
 
-    const tagStateCol = this.db.collection('tag_state');
-    const tagEventsCol = this.db.collection('tag_events');
+    const tagStateCol = this.db.collection('TagLastSeenProcessed');
+    const tagEventsCol = this.db.collection('TagScanProcessed');
 
     const present_count = await tagStateCol.countDocuments({ present: true });
     const total_tags = await tagStateCol.countDocuments({});
@@ -62,7 +262,7 @@ export class TagService {
       by_zone[z._id || 'Unknown'] = z.count;
     }
 
-    // นับเข้า/ออกใน 24 ชั่วโมงล่าสุด จาก tag_events
+    // นับเข้า/ออกใน 24 ชั่วโมงล่าสุด จาก TagScanProcessed
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const in24 = await tagEventsCol.countDocuments({
       type: 'enter',
@@ -85,7 +285,7 @@ export class TagService {
   async getPresentTags() {
     if (!this.db) return [];
     return this.db
-      .collection('tag_state')
+      .collection('TagLastSeenProcessed')
       .find({ present: true })
       .sort({ lastSeen: -1 })
       .toArray();
@@ -95,7 +295,7 @@ export class TagService {
   async getInOutTimeline(limit = 50) {
     if (!this.db) return [];
     return this.db
-      .collection('tag_events')
+      .collection('TagScanProcessed')
       .find({ type: { $in: ['enter', 'exit'] } })
       .sort({ ts: -1 })
       .limit(limit)
@@ -119,7 +319,7 @@ export class TagService {
       return;
     }
 
-    await this.db.collection('tag_state').updateOne(
+    await this.db.collection('TagLastSeenProcessed').updateOne(
       { tagId },
       {
         $set: {
@@ -133,7 +333,7 @@ export class TagService {
       { upsert: true },
     );
 
-    await this.db.collection('tag_events').insertOne({
+    await this.db.collection('TagScanProcessed').insertOne({
       tagId,
       zone,
       rssi,
@@ -145,191 +345,4 @@ export class TagService {
     console.log('[TagService] Saved MQTT payload to DB:', payload);
   }
 
-  // ---------------- WRITE from snapshot  ----------------
-  async updateGatewaySnapshot(
-    gwId: string,
-    tags: { mac: string; rssi: number; ts?: number; raw?: string }[],
-  ) {
-    if (!this.db) {
-      console.warn('[TagService] DB not ready yet, skip snapshot');
-      return;
-    }
-
-    const now = new Date();
-
-    // ===== CONFIG สำหรับ timeout + RSSI guard =====
-    const MIN_MISS_BEFORE_EXIT = 5; // ต้อง miss อย่างน้อยกี่รอบถึงจะพิจารณา exit
-    const EXIT_BASE_TIMEOUT_MS = 90_000; // หายไปอย่างน้อย 30 วิ ถึงจะออก
-    const EXIT_STRONG_EXTRA_MS = 90_000; // ถ้า RSSI แรง (> -65) บวกเวลาเพิ่มอีก 20 วิ
-    // =============================================
-
-    const macList = tags.map((t) => t.mac);
-
-    const tagStateCol = this.db.collection('tag_state');
-    const tagEventsCol = this.db.collection('tag_events');
-
-    // ---------- 1) เตรียม state เดิมใน gateway นี้ ----------
-    const prevStatesArr = await tagStateCol.find({ zone: gwId }).toArray();
-
-    const prevMap = new Map<string, any>();
-    for (const s of prevStatesArr) {
-      prevMap.set(s.tagId, s);
-    }
-
-    // ---------- 2) tag ที่ "หาย" จาก snapshot รอบนี้ ----------
-    const missingTags = prevStatesArr.filter((s) => !macList.includes(s.tagId));
-
-    for (const prev of missingTags) {
-      const newMiss = (prev.missCount || 0) + 1;
-
-      // อัปเดต missCount ก่อน
-      await tagStateCol.updateOne(
-        { tagId: prev.tagId },
-        { $set: { missCount: newMiss } },
-      );
-
-      // คำนวณเวลาที่เงียบไปตั้งแต่ lastSeen
-      const lastSeenMs = prev.lastSeen ? new Date(prev.lastSeen).getTime() : 0;
-      const silenceMs = now.getTime() - lastSeenMs;
-
-      // คำนวณ timeout ตาม RSSI (RSSI guard)
-      const prevRssi = prev.rssi ?? -999;
-      let timeoutMs = EXIT_BASE_TIMEOUT_MS;
-      if (prevRssi > -65) {
-        // ถ้าเคยแรงมาก แปลว่าอยู่ใกล้ → ให้ทนมากขึ้น
-        timeoutMs += EXIT_STRONG_EXTRA_MS;
-      }
-
-      // เงื่อนไข exit:
-      // 1) miss อย่างน้อย MIN_MISS_BEFORE_EXIT ครั้ง
-      // 2) หายเกิน timeoutMs
-      if (
-        newMiss >= MIN_MISS_BEFORE_EXIT &&
-        silenceMs >= timeoutMs &&
-        prev.present !== false
-      ) {
-        await tagStateCol.updateOne(
-          { tagId: prev.tagId },
-          {
-            $set: {
-              present: false,
-              lastExit: now,
-            },
-            $inc: { exitCount: 1 },
-          },
-        );
-
-        await tagEventsCol.insertOne({
-          tagId: prev.tagId,
-          zone: gwId,
-          type: 'exit',
-          ts: now,
-          createdAt: now,
-        });
-
-        console.log(
-          `[TagService] EXIT tag=${prev.tagId} gw=${gwId} missCount=${newMiss} silenceMs=${silenceMs}`,
-        );
-      } else {
-        console.log(
-          `[TagService] MISS tag=${prev.tagId} gw=${gwId} miss=${newMiss} silenceMs=${silenceMs}ms (wait more)`,
-        );
-      }
-    }
-
-    // ---------- 3) tag ที่อยู่ใน snapshot รอบนี้ ----------
-    for (const t of tags) {
-      const tagId = t.mac;
-      const rssi = t.rssi;
-      const ts = new Date();
-
-      const decoded = t.raw
-        ? decodeEyeRaw(t.raw, { mac: t.mac, rssi: t.rssi })
-        : null;
-
-      const prev = prevMap.get(tagId);
-      let eventType: 'enter' | 'move' | 'seen' | null = null;
-      let fromZone: string | null = null;
-
-      if (!prev || prev.present === false) {
-        eventType = 'enter';
-      } else if (prev.zone !== gwId) {
-        eventType = 'move';
-        fromZone = prev.zone;
-      } else {
-        eventType = 'seen';
-      }
-      // เตรียม field sensor ที่ decode ได้
-      const sensorSet: any = {};
-      if (decoded) {
-        if (decoded.temperatureC !== undefined)
-          sensorSet.temperatureC = decoded.temperatureC;
-        if (decoded.humidityPercent !== undefined)
-          sensorSet.humidityPercent = decoded.humidityPercent;
-        if (decoded.batteryMv !== undefined)
-          sensorSet.batteryMv = decoded.batteryMv;
-        if (decoded.moving !== undefined) sensorSet.moving = decoded.moving;
-        if (decoded.movementCount !== undefined)
-          sensorSet.movementCount = decoded.movementCount;
-        if (decoded.pitchDeg !== undefined)
-          sensorSet.pitchDeg = decoded.pitchDeg;
-        if (decoded.rollDeg !== undefined) sensorSet.rollDeg = decoded.rollDeg;
-        if (decoded.magnetDetected !== undefined)
-          sensorSet.magnetDetected = decoded.magnetDetected;
-        if (decoded.lowBattery !== undefined)
-          sensorSet.lowBattery = decoded.lowBattery;
-      }
-
-      await tagStateCol.updateOne(
-        { tagId },
-        {
-          $set: {
-            tagId,
-            zone: gwId,
-            rssi,
-            present: true,
-            lastSeen: ts,
-            missCount: 0, // reset ทุกครั้งที่เจอ
-            ...sensorSet,
-          },
-          $setOnInsert: {
-            firstSeen: ts,
-            enterCount: 0,
-            exitCount: 0,
-          },
-        },
-        { upsert: true },
-      );
-
-      if (eventType === 'enter') {
-        await tagStateCol.updateOne(
-          { tagId },
-          {
-            $set: { lastEnter: ts },
-            $inc: { enterCount: 1 },
-          },
-        );
-      }
-
-      const sensorEvent: any = { ...sensorSet };
-      await tagEventsCol.insertOne({
-        tagId,
-        zone: gwId,
-        fromZone: fromZone ?? null,
-        rssi,
-        ts,
-        type: eventType,
-        createdAt: ts,
-        ...sensorEvent,
-      });
-
-      console.log(
-        `[TagService] ${eventType?.toUpperCase()} tag=${tagId} gw=${gwId} rssi=${rssi}`,
-      );
-    }
-
-    console.log(
-      `[TagService] Snapshot (debounced) for ${gwId}, tags=${macList.length}`,
-    );
-  }
 }
