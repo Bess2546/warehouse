@@ -1,6 +1,7 @@
 // src/tag/tag.service.ts
 import { Injectable } from '@nestjs/common';
 import { MongoClient } from 'mongodb';
+import { decodeEyeRaw } from '../eye/eye-decode';
 
 @Injectable()
 export class TagService {
@@ -147,7 +148,7 @@ export class TagService {
   // ---------------- WRITE from snapshot  ----------------
   async updateGatewaySnapshot(
     gwId: string,
-    tags: { mac: string; rssi: number; ts?: number }[],
+    tags: { mac: string; rssi: number; ts?: number; raw?: string }[],
   ) {
     if (!this.db) {
       console.warn('[TagService] DB not ready yet, skip snapshot');
@@ -240,7 +241,11 @@ export class TagService {
     for (const t of tags) {
       const tagId = t.mac;
       const rssi = t.rssi;
-      const ts = t.ts ? new Date(t.ts) : now;
+      const ts = new Date();
+
+      const decoded = t.raw
+        ? decodeEyeRaw(t.raw, { mac: t.mac, rssi: t.rssi })
+        : null;
 
       const prev = prevMap.get(tagId);
       let eventType: 'enter' | 'move' | 'seen' | null = null;
@@ -254,6 +259,26 @@ export class TagService {
       } else {
         eventType = 'seen';
       }
+      // เตรียม field sensor ที่ decode ได้
+      const sensorSet: any = {};
+      if (decoded) {
+        if (decoded.temperatureC !== undefined)
+          sensorSet.temperatureC = decoded.temperatureC;
+        if (decoded.humidityPercent !== undefined)
+          sensorSet.humidityPercent = decoded.humidityPercent;
+        if (decoded.batteryMv !== undefined)
+          sensorSet.batteryMv = decoded.batteryMv;
+        if (decoded.moving !== undefined) sensorSet.moving = decoded.moving;
+        if (decoded.movementCount !== undefined)
+          sensorSet.movementCount = decoded.movementCount;
+        if (decoded.pitchDeg !== undefined)
+          sensorSet.pitchDeg = decoded.pitchDeg;
+        if (decoded.rollDeg !== undefined) sensorSet.rollDeg = decoded.rollDeg;
+        if (decoded.magnetDetected !== undefined)
+          sensorSet.magnetDetected = decoded.magnetDetected;
+        if (decoded.lowBattery !== undefined)
+          sensorSet.lowBattery = decoded.lowBattery;
+      }
 
       await tagStateCol.updateOne(
         { tagId },
@@ -264,7 +289,8 @@ export class TagService {
             rssi,
             present: true,
             lastSeen: ts,
-            missCount: 0, // reset เพราะเจอแล้ว
+            missCount: 0, // reset ทุกครั้งที่เจอ
+            ...sensorSet,
           },
           $setOnInsert: {
             firstSeen: ts,
@@ -285,6 +311,7 @@ export class TagService {
         );
       }
 
+      const sensorEvent: any = { ...sensorSet };
       await tagEventsCol.insertOne({
         tagId,
         zone: gwId,
@@ -293,6 +320,7 @@ export class TagService {
         ts,
         type: eventType,
         createdAt: ts,
+        ...sensorEvent,
       });
 
       console.log(

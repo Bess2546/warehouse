@@ -2,6 +2,7 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { connect, MqttClient } from 'mqtt';
 import { TagService } from '../tag/tag.service';
+import { raw } from 'express';
 
 @Injectable()
 export class MqttService implements OnModuleInit {
@@ -37,11 +38,15 @@ export class MqttService implements OnModuleInit {
           return;
         }
 
+        const snapshoTs = 
+          typeof json.time === 'number' ? json.time : Date.now();
+
         // แปลงเป็นรูปที่ TagService ต้องการ
         const tags = json.tags.map((t: any) => ({
           mac: t.mac,
           rssi: t.rssi,
           ts: Date.now(),
+          raw: t.raw,
         }));
 
         // ใช้ snapshot ฟังก์ชันแทนการ save ทีละ tag
