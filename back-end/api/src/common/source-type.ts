@@ -1,22 +1,33 @@
-// src/common/source-helper.ts
-export function detectSourceType(sourceId: string): 'M5' | 'Mobile' | 'Tracker' {
-  if (!sourceId) return 'Tracker';
+export function detectSourceType(
+  sourceId: string,
+  chipId?: string
+): 'M5' | 'Mobile' | 'Tracker' {
+  const id = (sourceId || '').trim();
 
-  // IMEI = ตัวเลขล้วน 14–16 หลัก → นับเป็น M5
-  if (/^[0-9]{14,16}$/.test(sourceId)) {
+  // A) ถ้ามี chipId ของ ESP32 = 12 hex → นี่คือ M5 แน่นอน
+  if (chipId && /^[0-9A-F]{12}$/i.test(chipId)) {
     return 'M5';
   }
 
-  // ถ้า pattern คล้าย deviceId มือถือ → Mobile
-  if (/^(MOBILE-|ANDROID-|IOS-)/i.test(sourceId)) {
+  // B) Prefix ของ Gateway
+  if (/^(GW_|M5_|GATEWAY)/i.test(id)) {
+    return 'M5';
+  }
+
+  // C) IMEI = Tracker
+  if (/^[0-9]{14,16}$/.test(id)) {
+    return 'Tracker';
+  }
+
+  // D) Mobile device
+  if (/^(MOBILE[-_]|ANDROID[-_]|IOS[-_]|PHONE[-_])/i.test(id)) {
     return 'Mobile';
   }
 
-  // ที่เหลือนับเป็น Tracker/M5Id (เช่น GW_A01, M5_A01)
-  return 'Tracker';
+  return 'Mobile';
 }
 
-// แปลง MAC -> TagUid แบบไม่มี :
 export function macToTagUid(mac: string): string {
-  return mac.replace(/:/g, '').toUpperCase(); // "7c:d9:f4:02:e8:0d" -> "7CD9F402E80D"
+  if (!mac) return '';
+  return mac.trim().toUpperCase().replace(/:/g, '');
 }

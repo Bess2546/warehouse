@@ -3,7 +3,12 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { MqttModule } from './mqtt/mqtt.module';
 import { TagModule } from './tag/tag.module';
-// import { Users } from 'lucide-react';
+
+
+import { TimelineService } from './timeline/timeline.service';
+import { TimelineController } from './timeline/timeline.controller';
+import { TmsModule } from './tms/tms.module';
+
 
 @Module({
   imports: [
@@ -12,8 +17,17 @@ import { TagModule } from './tag/tag.module';
     }),
     MqttModule,   // Service สำหรับรับ MQTT
     TagModule,    // REST API
+    TmsModule,
     // AuthModule,
     // UsersModule,
+  ],
+
+  controllers:[
+    TimelineController, //
+  ],
+
+  providers:[
+    TimelineService, //
   ],
 })
 export class AppModule {}

@@ -1,14 +1,19 @@
 // src/mqtt/mqtt.service.ts
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleInit,Logger } from '@nestjs/common';
 import { connect, MqttClient } from 'mqtt';
 import { TagService } from '../tag/tag.service';
-import { macToTagUid } from 'src/common/source-type';
+import { macToTagUid } from '../common/source-type'; 
+import { TmsService } from 'src/tms/tms.service';
 
 @Injectable()
 export class MqttService implements OnModuleInit {
+  private readonly logger = new Logger(MqttService.name);
   private client: MqttClient;
 
-  constructor(private readonly tagService: TagService) {
+  constructor(
+    private readonly tagService: TagService,
+    private readonly tmsService: TmsService,
+  ){
     console.log('[MqttService] created');
   }
 
@@ -32,33 +37,36 @@ export class MqttService implements OnModuleInit {
       try {
         const json = JSON.parse(text);
 
-        // --------- Convert old snapshot format -> unified format -----------
-        // json = { gw_id, time, tags:[ {mac, rssi, raw} ] }
-
         if (!Array.isArray(json.tags)) {
           console.warn('[MqttService] Invalid snapshot payload:', json);
           return;
         }
 
-        const eventTime =
-          typeof json.time === 'number'
-            ? new Date(json.time * 1000)
-            : new Date();
+        const eventIso = new Date().toDateString();
+        const imei = json.IMEI_ID || json.imei || json.gw_id || null;
+        const org = imei ? await this.tmsService.getOrganizeByM5(imei):null;
+
+             if (org) {
+          this.logger.log(
+            `From IMEI ${imei} → Organize: ${org.id} - ${org.name}`,
+          );
+        } else {
+          this.logger.warn(`No organize found for IMEI=${imei}`);
+        }
 
         const unifiedPayload = {
           SourceType: 'M5',
-          SourceId: json.gw_id,
-          OrgId: 0,
-          EventTime: json.time ? json.time * 1000 : Date.now(),
+          SourceId: imei,
+          OrgId: org?.id ?? 0,
+          EventTime: eventIso,
           Tags: json.tags.map((t: any) => ({
             TagUid: macToTagUid(t.mac),
             Rssi: t.rssi,
-            BatteryVoltageMv: null,   // ให้ backend decode แทน
+            BatteryVoltageMv: null,
             raw: t.raw ?? null,
           })),
         };
 
-        // --------- Save using new system -----------
         await this.tagService.handleGatewaySnapshot(unifiedPayload);
       } catch (err) {
         console.error('[MqttService] Error parsing/saving:', err);
