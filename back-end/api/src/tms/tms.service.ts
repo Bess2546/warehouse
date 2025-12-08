@@ -1,4 +1,4 @@
-// src/tms/tms.service.ts
+//src/tms/tms.service.ts
 import { Injectable, Logger } from '@nestjs/common';
 
 interface TmsOrganize {
@@ -23,7 +23,7 @@ export class TmsService {
 
     this.logger.log(`Call TMS GetOrganizeByM5 imei=${imei}`);
 
-    const res = await fetch(url);           // Node 18+ มี fetch ในตัว
+    const res = await fetch(url);           
     if (!res.ok) {
       this.logger.error(`TMS error ${res.status} ${res.statusText}`);
       return null;
@@ -46,3 +46,54 @@ export class TmsService {
     };
   }
 }
+
+
+
+
+// // src/tms/tms.service.ts (MOCK_UP)
+// import { Injectable, Logger } from '@nestjs/common';
+
+// interface TmsOrganize {
+//   id: number;
+//   name: string;
+//   address?: string;
+//   phone?: string;
+//   note?: string;
+// }
+
+// @Injectable()
+// export class TmsService {
+//   private readonly logger = new Logger(TmsService.name);
+
+//   // Mock database: ใส่ IMEI ของ M5 แต่ละตัวให้ตรงความจริง
+//   private readonly mockMap: Record<string, TmsOrganize> = {
+//     "19001900199": {
+//       id: 10,
+//       name: "BKK Hub",
+//       address: "Rama9 Thailand",
+//       phone: "0123456789",
+//       note: "Mocked data",
+//     },
+//     "19001900999": {
+//       id: 20,
+//       name: "Laos Border",
+//       address: "Vientiane",
+//       phone: "9876543210",
+//       note: "Mocked data 2",
+//     }
+//   };
+
+//   async getOrganizeByM5(imei: string): Promise<TmsOrganize | null> {
+//     this.logger.log(`Mock TMS Lookup: IMEI=${imei}`);
+
+//     const org = this.mockMap[imei];
+
+//     if (!org) {
+//       this.logger.warn(`IMEI=${imei} not found in mock database`);
+//       return null;
+//     }
+
+//     return org;
+//   }
+// }
+
