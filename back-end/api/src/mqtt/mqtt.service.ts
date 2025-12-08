@@ -20,7 +20,7 @@ export class MqttService implements OnModuleInit {
   onModuleInit() {
     console.log('[MqttService] Connecting to MQTT...');
 
-    this.client = connect('mqtt://127.0.0.1:1883');
+    this.client = connect(process.env.MQTT_URL || 'mqtt://127.0.0.1:1883');
 
     this.client.on('connect', () => {
       console.log('[MqttService] MQTT connected');

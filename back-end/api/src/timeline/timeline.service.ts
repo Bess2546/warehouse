@@ -36,7 +36,7 @@ export class TimelineService {
   private db: Db | null = null;
 
   constructor() {
-    const mongoUrl = process.env.MONGO_URL || 'mongodb://127.0.0.1:27017';
+    const mongoUrl = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017';
     const dbName = process.env.MONGO_DB || 'warehouse';
 
     const mongo = new MongoClient(mongoUrl);
