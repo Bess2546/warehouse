@@ -107,7 +107,8 @@ export default function DashboardPage() {
         setSummary(await summaryRes.json());
       }
       if (tagsRes?.ok) {
-        setTags(await tagsRes.json());
+        const data =await tagsRes.json();
+        setTags(Array.isArray(data) ? data : data.tags || []);
       }
 
       // Load from MongoDB collections (via API or direct)

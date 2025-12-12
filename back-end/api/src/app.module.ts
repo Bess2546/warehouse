@@ -8,6 +8,7 @@ import { TagModule } from './tag/tag.module';
 import { TimelineService } from './timeline/timeline.service';
 import { TimelineController } from './timeline/timeline.controller';
 import { TmsModule } from './tms/tms.module';
+import { TrackerModule } from './Tracker/tracker.module';
 
 
 @Module({
@@ -18,6 +19,7 @@ import { TmsModule } from './tms/tms.module';
     MqttModule,   // Service สำหรับรับ MQTT
     TagModule,    // REST API
     TmsModule,
+    TrackerModule,
     // AuthModule,
     // UsersModule,
   ],
