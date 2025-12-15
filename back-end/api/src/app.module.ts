@@ -9,6 +9,7 @@ import { TimelineService } from './timeline/timeline.service';
 import { TimelineController } from './timeline/timeline.controller';
 import { TmsModule } from './tms/tms.module';
 import { TrackerModule } from './Tracker/tracker.module';
+import { StatsModule } from './stats/stats.module';
 
 
 @Module({
@@ -20,6 +21,7 @@ import { TrackerModule } from './Tracker/tracker.module';
     TagModule,    // REST API
     TmsModule,
     TrackerModule,
+    StatsModule,
     // AuthModule,
     // UsersModule,
   ],
