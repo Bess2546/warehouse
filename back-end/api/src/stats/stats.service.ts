@@ -2,28 +2,39 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import { Shipment } from '../schemas/shipment.schema';
+import { Tracker } from '../schemas/tracker.schema';
+import { TagLastSeen } from '../schemas/tag-last-seen.schema';
 
 @Injectable()
 export class StatsService {
   constructor(
-    @InjectModel('Shipment') private shipmentModel: Model<any>,
-    @InjectModel('Tracker') private trackerModel: Model<any>,
-    @InjectModel('Tag') private tagModel: Model<any>,
-    // เพิ่ม model อื่นๆ ตามที่มี
+    @InjectModel(Shipment.name) private shipmentModel: Model<Shipment>,
+    @InjectModel(Tracker.name) private trackerModel: Model<Tracker>,
+    @InjectModel(TagLastSeen.name) private tagModel: Model<TagLastSeen>,
   ) {}
 
   async getOverviewStats() {
-    // นับจำนวนต่างๆ
     const [
       activeShipments,
       delayedShipments,
       activeTrackers,
       tagsDetected,
-      locations
+      locations,
     ] = await Promise.all([
-      this.shipmentModel.countDocuments({ status: 'active' }),
-      this.shipmentModel.countDocuments({ status: 'delayed' }),
-      this.trackerModel.countDocuments({ status: 'active' }),
+      this.shipmentModel.countDocuments({
+        status: 'IN_TRANSIT',
+        isActive: true,
+      }),
+      this.shipmentModel.countDocuments({
+        onTimeStatus: 'DELAYED',
+        isActive: true,
+      }),
+      // แก้เป็นตัวพิมพ์ใหญ่
+      this.trackerModel.countDocuments({ 
+        status: 'ACTIVE',
+        isActive: true 
+      }),
       this.tagModel.countDocuments(),
       this.getLocations(),
     ]);
@@ -38,24 +49,48 @@ export class StatsService {
   }
 
   async getLocations() {
-    // ดึง location ทั้งหมด (ปรับตาม schema ของคุณ)
-    const trackers = await this.trackerModel.find({ status: 'active' });
-    return trackers.map(t => ({
-      id: t._id,
-      name: t.name || t.deviceId,
-      latitude: t.location?.latitude,
-      longitude: t.location?.longitude,
-    }));
+    const activeShipments = await this.shipmentModel
+      .find({
+        status: 'IN_TRANSIT',
+        isActive: true,
+      })
+      .limit(50)
+      .exec();
+
+    return activeShipments.map((shipment) => {
+      const currentStop = shipment.route.find(
+        (r) => r.seq === shipment.currentStopSeq,
+      );
+      return {
+        id: shipment._id.toString(),
+        name: `${shipment.tripId} - ${shipment.vehiclePlate}`,
+        type: 'shipment',
+        organizeName: currentStop?.organizeName || 'Unknown',
+        status: shipment.onTimeStatus,
+      };
+    });
   }
 
   async getActiveShipments() {
-    return this.shipmentModel.find({ status: 'active' }).limit(10);
+    return this.shipmentModel
+      .find({
+        status: 'IN_TRANSIT',
+        isActive: true,
+      })
+      .sort({ updatedAt: -1 })
+      .limit(10)
+      .select(
+        'tripId referenceNo origin destination status onTimeStatus vehiclePlate driverName currentStopSeq totalDelayMin route',
+      )
+      .exec();
   }
 
   async getRecentTagDetections() {
     return this.tagModel
       .find()
-      .sort({ lastSeen: -1 })
-      .limit(10);
+      .sort({ EventTime: -1 }) 
+      .limit(10)
+      .select('TagUid SourceId LastRssi BatteryVoltageMv EventTime OrgId')
+      .exec();
   }
 }

@@ -1,5 +1,8 @@
 // src/tms/tms.service.ts
 import { Injectable, Logger } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { Shipment } from '../schemas/shipment.schema';
 import { MongoClient } from 'mongodb';
 
 interface TmsOrganize {
@@ -13,14 +16,13 @@ interface TmsOrganize {
 @Injectable()
 export class TmsService {
   private readonly logger = new Logger(TmsService.name);
-
   // สำหรับโหมด real (TMS จริง)
   private readonly baseUrl = process.env.TMS_BASE_URL || 'http://tms.example.com';
-
-  // สำหรับโหมด mock/DB ของเราเอง
   private db: any;
 
-  constructor() {
+  constructor(
+    @InjectModel(Shipment.name) private shipmentModel: Model<Shipment>,
+  ) {
     const mongoUrl = process.env.MONGO_URI || 'mongodb://localhost:27017';
     const dbName = 'warehouse';
 
@@ -31,7 +33,31 @@ export class TmsService {
     });
   }
 
-  // === หน้าบ้านที่คนอื่นเรียกใช้ ===
+  async findAllShipments(status?: string) {
+    const filter = status ? { status } : {};
+    return this.shipmentModel.find(filter).exec();
+  }
+
+  async findShipmentById(id: string) {
+    return this.shipmentModel.findById(id).exec();
+  }
+
+  async createShipment(data: any) {
+    const shipment = new this.shipmentModel(data);
+    return shipment.save();
+  }
+
+  async updateShipment(id: string, data: any) {
+    return this.shipmentModel.findByIdAndUpdate(id, data, { new: true }).exec();
+  }
+
+  async getShipmentTimeline(id: string) {
+    const shipment = await this.shipmentModel.findById(id).exec();
+    if (!shipment) return null;
+    return shipment.route || [];
+  }
+
+
   async getOrganizeByM5(imei: string): Promise<TmsOrganize | null> {
     if (!imei) return null;
 

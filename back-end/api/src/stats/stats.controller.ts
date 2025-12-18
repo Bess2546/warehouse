@@ -7,7 +7,22 @@ export class StatsController {
   constructor(private readonly statsService: StatsService) {}
 
   @Get()
-  async getStats() {
+  getOverviewStats() {
     return this.statsService.getOverviewStats();
+  }
+
+  @Get('locations')
+  getLocations() {
+    return this.statsService.getLocations();
+  }
+
+  @Get('shipments/active')
+  getActiveShipments() {
+    return this.statsService.getActiveShipments();
+  }
+
+  @Get('tags/recent')
+  getRecentTagDetections() {
+    return this.statsService.getRecentTagDetections();
   }
 }
