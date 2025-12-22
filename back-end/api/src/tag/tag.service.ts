@@ -10,7 +10,7 @@ export class TagService {
 
   constructor() {
     const mongoUrl = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017';
-    const dbName = process.env.MONGO_DB || 'warehouse';
+    const dbName = process.env.MONGO_DB || 'AssetTag';
 
     const mongo = new MongoClient(mongoUrl);
 
