@@ -2,7 +2,7 @@
 import { Module } from '@nestjs/common';
 import { MqttService } from './mqtt.service';
 import { TagModule } from '../tag/tag.module';
-import { TmsModule } from 'src/tms/tms.module';
+import { TmsModule } from '../tms/tms.module';
 
 @Module({
   imports: [TagModule, TmsModule],

@@ -2,7 +2,7 @@
 import { Injectable } from '@nestjs/common';
 import { MongoClient } from 'mongodb';
 import { decodeEyeRaw } from '../eye/eye-decode';
-import { extractLocation } from 'src/common/location-helper';
+import { extractLocation } from '../common/location-helper';
 
 @Injectable()
 export class TagService {
