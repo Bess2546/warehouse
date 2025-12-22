@@ -14,6 +14,7 @@ import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { User } from './users/entities/user.entity';
 import { AdminModule } from './admin/admin.module';
+import { Organization } from './organizations/entities/organization.entity';
 
 
 @Module({
@@ -34,8 +35,11 @@ import { AdminModule } from './admin/admin.module';
     username: configService.get('POSTGRES_USER', 'postgres'),
     password: configService.get('POSTGRES_PASSWORD', 'password'),
     database: configService.get('POSTGRES_DB', 'warehouse_auth'),
-    entities: [User],
+    entities: [User, Organization],
     synchronize: false,
+    ssl:{
+      rejectUnauthorized: false,
+    }
   }),
   inject: [ConfigService],
 }),

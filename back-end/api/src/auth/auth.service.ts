@@ -1,3 +1,5 @@
+// src/auth/suth.service.ts
+
 import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../users/users.service';
@@ -14,8 +16,13 @@ export class AuthService {
   // Validate user สำหรับ LocalStrategy
   async validateUser(username: string, password: string): Promise<any> {
     const user = await this.usersService.findByUsernameWithOrg(username);
+   
+     console.log('=== DEBUG ===');
+    console.log('Found user:', user);
+    console.log('Password from DB:', user?.password);
     
     if (!user) {
+      console.log('User not found!');
       return null;
     }
 
@@ -24,7 +31,10 @@ export class AuthService {
     }
 
     const isPasswordValid = await bcrypt.compare(password, user.password);
+    console.log('Password valid:', isPasswordValid);
+
     if (!isPasswordValid) {
+      console.log('❌ Password mismatch!');
       return null;
     }
 

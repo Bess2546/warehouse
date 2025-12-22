@@ -23,7 +23,7 @@ class AssignOrganizeDto{
     organizeId:number;
 }
 
-@Controller('api/Tracker')
+@Controller('Tracker')
 export class TrackerController{
     constructor(private readonly trackerService:TrackerService){}
 
