@@ -1,5 +1,5 @@
 // src/app.module.ts
-import { Module } from '@nestjs/common';
+import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -16,6 +16,8 @@ import { User } from './users/entities/user.entity';
 import { AdminModule } from './admin/admin.module';
 import { Organization } from './organizations/entities/organization.entity';
 
+// Middleware
+import { LoggerMiddleware, RateLimitMiddleware } from './common/middleware';
 
 @Module({
   imports: [
@@ -27,25 +29,25 @@ import { Organization } from './organizations/entities/organization.entity';
 
     //PostgreSQL
     TypeOrmModule.forRootAsync({
-  imports: [ConfigModule],
-  useFactory: (configService: ConfigService) => ({
-    type: 'postgres',
-    host: configService.get('POSTGRES_HOST', 'localhost'),
-    port: configService.get<number>('POSTGRES_PORT', 5432),
-    username: configService.get('POSTGRES_USER', 'postgres'),
-    password: configService.get('POSTGRES_PASSWORD', 'password'),
-    database: configService.get('POSTGRES_DB', 'warehouse_auth'),
-    entities: [User, Organization],
-    synchronize: false,
-    ssl:{
-      rejectUnauthorized: false,
-    }
-  }),
-  inject: [ConfigService],
-}),
+      imports: [ConfigModule],
+      useFactory: (configService: ConfigService) => ({
+        type: 'postgres',
+        host: configService.get('POSTGRES_HOST', 'localhost'),
+        port: configService.get<number>('POSTGRES_PORT', 5432),
+        username: configService.get('POSTGRES_USER', 'postgres'),
+        password: configService.get('POSTGRES_PASSWORD', 'password'),
+        database: configService.get('POSTGRES_DB', 'warehouse_auth'),
+        entities: [User, Organization],
+        synchronize: false,
+        ssl: {
+          rejectUnauthorized: false,
+        }
+      }),
+      inject: [ConfigService],
+    }),
 
-    MqttModule,   // Service สำหรับรับ MQTT
-    TagModule,    // REST API
+    MqttModule,
+    TagModule,
     TmsModule,
     TrackerModule,
     StatsModule,
@@ -56,6 +58,18 @@ import { Organization } from './organizations/entities/organization.entity';
 
   controllers: [TimelineController],
   providers: [TimelineService],
-
 })
-export class AppModule { }
+
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    // Logger - ทุก routes
+    consumer
+      .apply(LoggerMiddleware)
+      .forRoutes('*');
+
+    // Rate Limit - เฉพาะ routes สำคัญ
+    consumer
+      .apply(RateLimitMiddleware)
+      .forRoutes('auth/login', 'admin/*');
+  }
+}
