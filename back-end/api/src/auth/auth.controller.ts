@@ -5,7 +5,6 @@ import { LocalAuthGuard } from './local-auth.guard';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { LoginDto } from './dto/login.dto';
 import { CurrentUser } from './decorators';
-import { get } from 'http';
 
 @Controller('auth')
 export class AuthController {
@@ -33,6 +32,9 @@ export class AuthController {
     @CurrentUser('userId') userId: number,
     @Body() body: { currentPassword: string; newPassword: string},
   ){
+    console.log("=== CONTROLLER DEBUG ===");
+    console.log('userId from token', userId);
+    console.log('body', body);
     return this.authService.changePassword(userId, body.currentPassword, body.newPassword);
   }
 

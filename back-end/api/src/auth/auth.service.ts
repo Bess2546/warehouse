@@ -11,16 +11,16 @@ export class AuthService {
   constructor(
     private usersService: UsersService,
     private jwtService: JwtService,
-  ) {}
+  ) { }
 
   // Validate user สำหรับ LocalStrategy
   async validateUser(username: string, password: string): Promise<any> {
     const user = await this.usersService.findByUsernameWithOrg(username);
-   
-     console.log('=== DEBUG ===');
+
+    console.log('=== DEBUG ===');
     console.log('Found user:', user);
     console.log('Password from DB:', user?.password);
-    
+
     if (!user) {
       console.log('User not found!');
       return null;
@@ -45,7 +45,7 @@ export class AuthService {
   // Login
   async login(loginDto: LoginDto) {
     const user = await this.validateUser(loginDto.username, loginDto.password);
-    
+
     if (!user) {
       throw new UnauthorizedException('Username หรือ Password ไม่ถูกต้อง');
     }
@@ -78,7 +78,7 @@ export class AuthService {
   // ดึง Profile
   async getProfile(userId: number) {
     const user = await this.usersService.findByIdWithOrg(userId);
-    
+
     if (!user) {
       throw new UnauthorizedException('ไม่พบผู้ใช้');
     }
@@ -89,8 +89,12 @@ export class AuthService {
 
   // เปลี่ยนรหัสผ่าน
   async changePassword(userId: number, currentPassword: string, newPassword: string) {
+    console.log('=== CHANGE PASSWORD DEBUG ===');
+    console.log('newPassword (plain):', newPassword);
+
     const user = await this.usersService.findOne(userId);
-    
+    console.log('Old hash:', user?.password);
+
     if (!user) {
       throw new UnauthorizedException('ไม่พบผู้ใช้');
     }
@@ -103,6 +107,15 @@ export class AuthService {
 
     // Hash รหัสผ่านใหม่
     const hashedPassword = await bcrypt.hash(newPassword, 10);
+    console.log('New hash:', hashedPassword);
+
+    const testCompare = await bcrypt.compare(newPassword, hashedPassword);
+    console.log('Test new hash valid:', testCompare);
+
+    const updatedUser = await this.usersService.findOne(userId);
+    console.log('After update hash:', updatedUser?.password);
+    console.log('Hash saved correctly:', hashedPassword === updatedUser?.password);
+
     await this.usersService.update(userId, { password: hashedPassword });
 
     return { message: 'เปลี่ยนรหัสผ่านสำเร็จ' };

@@ -1,3 +1,4 @@
+// src/app/dashboard/page.tsx
 'use client';
 
 import { useEffect } from 'react';
@@ -48,7 +49,7 @@ export default function DashboardPage() {
         <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
             <span className="text-2xl">🚛</span>
-            <h1 className="text-xl font-bold text-gray-800">TMS Dashboard</h1>
+            <h1 className="text-xl font-bold text-gray-800">WareHouse Dashboard</h1>
           </div>
           <div className="flex items-center gap-4">
             <div className="text-right">
@@ -128,7 +129,7 @@ export default function DashboardPage() {
           </Link>
 
           {/* Admin - Organizations (Super Admin Only) */}
-          {isSuperAdmin && (
+          {isSuperAdmin &&  (
             <Link href="/admin/organizations" className="bg-white rounded-xl shadow p-6 hover:shadow-lg transition cursor-pointer border-2 border-purple-200">
               <div className="text-3xl mb-3">🏢</div>
               <h3 className="font-semibold text-purple-800">จัดการบริษัท</h3>
@@ -145,12 +146,6 @@ export default function DashboardPage() {
             </Link>
           )}
 
-          {/* Change Password */}
-          <Link href="/change-password" className="bg-white rounded-xl shadow p-6 hover:shadow-lg transition cursor-pointer">
-            <div className="text-3xl mb-3">🔑</div>
-            <h3 className="font-semibold text-gray-800">เปลี่ยนรหัสผ่าน</h3>
-            <p className="text-sm text-gray-500">แก้ไขรหัสผ่านของคุณ</p>
-          </Link>
         </div>
       </main>
     </div>

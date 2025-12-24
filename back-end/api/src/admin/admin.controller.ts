@@ -1,46 +1,62 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, UseGuards, ParseIntPipe,} from '@nestjs/common';
+// src/admin/admin.controller.ts
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  UseGuards,
+  ParseIntPipe,
+} from '@nestjs/common';
 import { AdminService } from './admin.service';
-import { RolesGuard, Roles } from '../auth/roles.guard';
-import { UserRole } from '../users/entities/user.entity';
-import {CreateOrganizationDto, UpdateOrganizationDto, CreateUserDto, UpdateUserDto, ResetPasswordDto,} from '../auth/dto/admin.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RolesGuard, Roles } from '../auth/roles.guard';
+import { CurrentUser } from '../auth/decorators';
+import { UserRole } from '../users/entities/user.entity';
+import {
+  CreateOrganizationDto,
+  UpdateOrganizationDto,
+  CreateUserDto,
+  UpdateUserDto,
+  ResetPasswordDto,
+} from '../auth/dto/admin.dto';
 
 @Controller('admin')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN)
 export class AdminController {
   constructor(private adminService: AdminService) {}
 
   // ==================== Dashboard ====================
 
   @Get('dashboard')
-  @Roles(UserRole.SUPER_ADMIN)
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN)
   async getDashboard() {
     return this.adminService.getDashboardStats();
   }
 
   // ==================== Organization Management ====================
+  // Super Admin เท่านั้น (ยกเว้น GET)
 
-  // ดึงรายการ Organizations ทั้งหมด
   @Get('organizations')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN)
   async getOrganizations() {
     return this.adminService.getAllOrganizations();
   }
 
-  // ดึง Organization ตาม ID
   @Get('organizations/:id')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN)
   async getOrganization(@Param('id', ParseIntPipe) id: number) {
     return this.adminService.getOrganizationById(id);
   }
 
-  // สร้าง Organization ใหม่ (Super Admin เท่านั้น)
   @Post('organizations')
   @Roles(UserRole.SUPER_ADMIN)
   async createOrganization(@Body() dto: CreateOrganizationDto) {
     return this.adminService.createOrganization(dto);
   }
 
-  // อัพเดท Organization (Super Admin เท่านั้น)
   @Patch('organizations/:id')
   @Roles(UserRole.SUPER_ADMIN)
   async updateOrganization(
@@ -50,7 +66,6 @@ export class AdminController {
     return this.adminService.updateOrganization(id, dto);
   }
 
-  // ลบ Organization (Super Admin เท่านั้น)
   @Delete('organizations/:id')
   @Roles(UserRole.SUPER_ADMIN)
   async deleteOrganization(@Param('id', ParseIntPipe) id: number) {
@@ -58,53 +73,61 @@ export class AdminController {
   }
 
   // ==================== User Management ====================
+  // Admin และ Super Admin (Admin จัดการได้เฉพาะ role=user)
 
-  // ดึงรายการ Users ทั้งหมด (Super Admin)
   @Get('users')
-  @Roles(UserRole.SUPER_ADMIN)
-  async getAllUsers() {
-    return this.adminService.getAllUsers();
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN)
+  async getAllUsers(@CurrentUser() currentUser: any) {
+    return this.adminService.getAllUsers(currentUser);
   }
 
-  // ดึง Users ตาม Organization
   @Get('organizations/:orgId/users')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN)
   async getUsersByOrganization(@Param('orgId', ParseIntPipe) orgId: number) {
     return this.adminService.getUsersByOrganization(orgId);
   }
 
-  // ดึง User ตาม ID
   @Get('users/:id')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN)
   async getUser(@Param('id', ParseIntPipe) id: number) {
     return this.adminService.getUserById(id);
   }
 
-  // สร้าง User ใหม่
   @Post('users')
-  async createUser(@Body() dto: CreateUserDto) {
-    return this.adminService.createUser(dto);
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN)
+  async createUser(
+    @Body() dto: CreateUserDto,
+    @CurrentUser() currentUser: any,
+  ) {
+    return this.adminService.createUser(dto, currentUser);
   }
 
-  // อัพเดท User
   @Patch('users/:id')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN)
   async updateUser(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateUserDto,
+    @CurrentUser() currentUser: any,
   ) {
-    return this.adminService.updateUser(id, dto);
+    return this.adminService.updateUser(id, dto, currentUser);
   }
 
-  // Reset รหัสผ่าน
   @Post('users/:id/reset-password')
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN)
   async resetPassword(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: ResetPasswordDto,
+    @CurrentUser() currentUser: any,
   ) {
-    return this.adminService.resetPassword(id, dto.newPassword);
+    return this.adminService.resetPassword(id, dto.newPassword, currentUser);
   }
 
-  // ลบ User
   @Delete('users/:id')
-  async deleteUser(@Param('id', ParseIntPipe) id: number) {
-    return this.adminService.deleteUser(id);
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN)
+  async deleteUser(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() currentUser: any,
+  ) {
+    return this.adminService.deleteUser(id, currentUser);
   }
 }
