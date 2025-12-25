@@ -2,6 +2,8 @@
 'use client';
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 // ==================== TYPES ====================
 interface Tag {
@@ -19,6 +21,33 @@ interface Tag {
 }
 
 // ==================== COMPONENTS ====================
+
+// Back Button Component
+function BackButton() {
+  const router = useRouter();
+  
+  return (
+    <button
+      onClick={() => router.push('/dashboard')}
+      className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+    >
+      <svg 
+        className="w-5 h-5" 
+        fill="none" 
+        stroke="currentColor" 
+        viewBox="0 0 24 24"
+      >
+        <path 
+          strokeLinecap="round" 
+          strokeLinejoin="round" 
+          strokeWidth={2} 
+          d="M15 19l-7-7 7-7" 
+        />
+      </svg>
+      <span className="font-medium">กลับ</span>
+    </button>
+  );
+}
 
 // Battery Indicator Component
 function BatteryIndicator({ voltage }: { voltage: number | null }) {
@@ -177,9 +206,10 @@ export default function WarehousePage() {
   useEffect(() => {
     const fetchTags = async () => {
       try {
-        const res = await fetch("/api/tag");
+        const res = await fetch("/api/tag/present");
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
+        
         const tagList = data?.Tags || data || [];
         setTags(Array.isArray(tagList) ? tagList : []);
         setLastUpdate(new Date());
@@ -228,6 +258,11 @@ export default function WarehousePage() {
     <div className="min-h-screen bg-gray-50 p-4 md:p-6 lg:p-8">
       <div className="max-w-7xl mx-auto">
         
+        {/* Back Button */}
+        <div className="mb-4">
+          <BackButton />
+        </div>
+
         {/* Header */}
         <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-6 mb-8">
           <div>

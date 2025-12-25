@@ -176,7 +176,7 @@ export class TagService {
     if (!this.db) return [];
     return this.db
       .collection('TagLastSeenProcessed')
-      .find({ Present: true })
+      .find({})
       .sort({ LastSeenTime: -1 })
       .toArray();
   }

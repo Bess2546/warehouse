@@ -1,8 +1,10 @@
 // src/mqtt/mqtt.service.ts
-import { Injectable, OnModuleInit,Logger } from '@nestjs/common';
+import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
 import { connect, MqttClient } from 'mqtt';
 import { TagService } from '../tag/tag.service';
-import { macToTagUid } from '../common/source-type'; 
+import { TagScanBufferService } from '../tag-movement/tag-scan-buffer.service';
+import { WarehouseService } from '../warehouse/warehouse.service';
+import { macToTagUid } from '../common/source-type';
 import { TmsService } from '../tms/tms.service';
 
 @Injectable()
@@ -13,64 +15,110 @@ export class MqttService implements OnModuleInit {
   constructor(
     private readonly tagService: TagService,
     private readonly tmsService: TmsService,
-  ){
-    console.log('[MqttService] created');
+    private readonly scanBufferService: TagScanBufferService,
+    private readonly warehouseService: WarehouseService,
+  ) {
+    this.logger.log('MqttService created');
   }
 
   onModuleInit() {
-    console.log('[MqttService] Connecting to MQTT...');
+    this.logger.log('Connecting to MQTT...');
 
     this.client = connect(process.env.MQTT_URL || 'mqtt://127.0.0.1:1883');
 
     this.client.on('connect', () => {
-      console.log('[MqttService] MQTT connected');
+      this.logger.log('MQTT connected');
       this.client.subscribe('warehouse/ble/+/snapshot', (err) => {
-        if (err) console.error('[MqttService] Subscribe error:', err);
-        else console.log('[MqttService] Subscribed: warehouse/ble/+/snapshot');
+        if (err) this.logger.error('Subscribe error:', err);
+        else this.logger.log('Subscribed: warehouse/ble/+/snapshot');
       });
     });
 
     this.client.on('message', async (topic, msg) => {
       const text = msg.toString();
-      console.log('[MqttService] Message:', topic, text);
+      this.logger.debug(`Message: ${topic} ${text}`);
 
       try {
         const json = JSON.parse(text);
 
         if (!Array.isArray(json.tags)) {
-          console.warn('[MqttService] Invalid snapshot payload:', json);
+          this.logger.warn('Invalid snapshot payload:', json);
           return;
         }
 
-        const eventIso = new Date().toDateString();
+        const eventIso = new Date().toISOString();
         const imei = json.IMEI_ID || json.imei || json.gw_id || null;
-        const org = imei ? await this.tmsService.getOrganizeByM5(imei):null;
+        const org = imei ? await this.tmsService.getOrganizeByM5(imei) : null;
 
-             if (org) {
-          this.logger.log(
-            `From IMEI ${imei} → Organize: ${org.id} - ${org.name}`,
-          );
+        if (org) {
+          this.logger.log(`From IMEI ${imei} → Org: ${org.id} - ${org.name}`);
         } else {
-          this.logger.warn(`No organize found for IMEI=${imei}`);
+          this.logger.warn(`No org found for IMEI=${imei}`);
         }
 
+        const orgId = org?.id ?? 0;
+
+        // แปลง tags เป็นรูปแบบมาตรฐาน
+        const processedTags = json.tags.map((t: any) => ({
+          TagUid: macToTagUid(t.mac),
+          Rssi: t.rssi,
+          BatteryVoltageMv: null,
+          raw: t.raw ?? null,
+        }));
+
+        // 1. บันทึกลง TagLastSeenProcessed (เหมือนเดิม)
         const unifiedPayload = {
           SourceType: 'M5',
           SourceId: imei,
-          OrgId: org?.id ?? 0,
+          OrgId: orgId,
           EventTime: eventIso,
-          Tags: json.tags.map((t: any) => ({
-            TagUid: macToTagUid(t.mac),
-            Rssi: t.rssi,
-            BatteryVoltageMv: null,
-            raw: t.raw ?? null,
-          })),
+          Tags: processedTags,
         };
-
         await this.tagService.handleGatewaySnapshot(unifiedPayload);
+
+        // 2. ประมวลผล IN/OUT ด้วย debounce logic
+        await this.processMovementsWithBuffer(orgId, imei, processedTags);
+
       } catch (err) {
-        console.error('[MqttService] Error parsing/saving:', err);
+        this.logger.error('Error parsing/saving:', err);
       }
     });
+  }
+
+  /**
+   * ประมวลผล IN/OUT ด้วย TagScanBufferService
+   */
+  private async processMovementsWithBuffer(
+    orgId: number,
+    m5DeviceId: string,
+    tags: Array<{ TagUid: string; Rssi: number }>,
+  ) {
+    try {
+      // 1. หา warehouse ที่ M5 นี้ติดตั้งอยู่
+      const warehouse = await this.warehouseService.getWarehouseByM5(m5DeviceId);
+
+      if (!warehouse || !warehouse._id) {
+        this.logger.debug(`No warehouse for M5: ${m5DeviceId}`);
+        return;
+      }
+
+      const warehouseId = warehouse._id.toString();
+      const warehouseName = warehouse.Name;
+
+      this.logger.debug(`Processing ${tags.length} tags at ${warehouseName}`);
+
+      // 2. ส่งให้ ScanBufferService ประมวลผล
+      await this.scanBufferService.processScanSnapshot(
+        orgId,
+        warehouseId,
+        warehouseName,
+        m5DeviceId,
+        'M5',
+        tags,
+      );
+
+    } catch (err) {
+      this.logger.error(`Error processing movements: ${err.message}`);
+    }
   }
 }

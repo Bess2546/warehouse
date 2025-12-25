@@ -15,9 +15,11 @@ import { UsersModule } from './users/users.module';
 import { User } from './users/entities/user.entity';
 import { AdminModule } from './admin/admin.module';
 import { Organization } from './organizations/entities/organization.entity';
+import { TagMovementModule } from './tag-movement/tag-movement.module';
 
 // Middleware
 import { LoggerMiddleware, RateLimitMiddleware } from './common/middleware';
+import { WarehouseModule } from './warehouse/warehouse.module';
 
 @Module({
   imports: [
@@ -54,6 +56,8 @@ import { LoggerMiddleware, RateLimitMiddleware } from './common/middleware';
     AuthModule,
     UsersModule,
     AdminModule,
+    TagMovementModule,
+    WarehouseModule,
   ],
 
   controllers: [TimelineController],
