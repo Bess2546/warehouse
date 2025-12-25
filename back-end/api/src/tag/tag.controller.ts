@@ -3,7 +3,7 @@ import { Controller, Get, Query } from '@nestjs/common';
 import { TagService } from './tag.service';
 
 
-@Controller('tags')
+@Controller('tag')
 export class TagController {
   constructor(private readonly tagService: TagService) {}
 
