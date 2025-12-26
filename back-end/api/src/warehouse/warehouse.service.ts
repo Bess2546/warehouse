@@ -1,141 +1,139 @@
-// src/warehouse/warehouse.service.ts
-import { Injectable } from '@nestjs/common';
-import { MongoClient, ObjectId } from 'mongodb';
-
-export interface Warehouse {
-  _id?: ObjectId;
-  OrgId: number;
-  Name: string;
-  Code: string;
-  M5DeviceId: string;       // IMEI ของ M5 ที่ติดตั้งที่ warehouse นี้
-  Location?: {
-    Lat: number;
-    Lng: number;
-    Address: string;
-  };
-  Type: 'ORIGIN' | 'DESTINATION' | 'HUB';
-  IsActive: boolean;
-  CreatedAt: Date;
-  UpdatedAt: Date;
-}
+// src/warehouses/warehouses.service.ts
+import { Injectable, Logger } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { WarehouseEntity } from '../warehouse/warehouse.entity';
+import { TrackerEntity } from '../Tracker/entities/tracker.entity';
 
 @Injectable()
 export class WarehouseService {
-  private db: any;
+  private readonly logger = new Logger(WarehouseService.name);
 
-  constructor() {
-    const mongoUrl = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017';
-    const dbName = process.env.MONGO_DB || 'AssetTag';
+  constructor(
+    @InjectRepository(WarehouseEntity)
+    private warehouseRepo: Repository<WarehouseEntity>,
+    @InjectRepository(TrackerEntity)
+    private trackerRepo: Repository<TrackerEntity>,
+  ) {}
 
-    const mongo = new MongoClient(mongoUrl);
+  // ==================== หา Warehouse จาก M5 IMEI ====================
+  async getWarehouseByM5(imei: string): Promise<WarehouseEntity | null> {
+    if (!imei) return null;
 
-    mongo
-      .connect()
-      .then(() => {
-        this.db = mongo.db(dbName);
-        console.log('[WarehouseService] MongoDB ready');
-        this.ensureIndexes();
-      })
-      .catch((err) => {
-        console.error('[WarehouseService] Mongo error:', err);
-      });
-  }
+    // หา Tracker ก่อน
+    const tracker = await this.trackerRepo.findOne({
+      where: { imei, isActive: true },
+    });
 
-  private async ensureIndexes() {
-    try {
-      const collection = this.db.collection('Warehouses');
-      await collection.createIndex({ OrgId: 1 });
-      await collection.createIndex({ M5DeviceId: 1 }, { unique: true });
-      await collection.createIndex({ Code: 1 });
-      console.log('[WarehouseService] Indexes created');
-    } catch (err) {
-      console.error('[WarehouseService] Index error:', err);
+    if (!tracker) {
+      this.logger.debug(`Tracker not found for IMEI: ${imei}`);
+      return null;
     }
+
+    // หา Warehouse ที่ tracker นี้ติดตั้งอยู่
+    const warehouse = await this.warehouseRepo.findOne({
+      where: { trackerId: tracker.id, isActive: true },
+      relations: ['organization', 'tracker'],
+    });
+
+    if (!warehouse) {
+      this.logger.debug(`No warehouse assigned for tracker: ${imei}`);
+      return null;
+    }
+
+    this.logger.log(`Found warehouse for IMEI ${imei}: ${warehouse.name}`);
+    return warehouse;
   }
 
-  // ==================== CREATE ====================
+  // ==================== CRUD ====================
 
-  async createWarehouse(warehouse: Omit<Warehouse, '_id' | 'CreatedAt' | 'UpdatedAt'>): Promise<Warehouse> {
-    if (!this.db) throw new Error('Database not ready');
+  async findAll(organizationId?: number): Promise<WarehouseEntity[]> {
+    const where: any = { isActive: true };
+    if (organizationId) {
+      where.organizationId = organizationId;
+    }
 
-    const doc = {
-      ...warehouse,
-      IsActive: warehouse.IsActive ?? true,
-      CreatedAt: new Date(),
-      UpdatedAt: new Date(),
-    };
-
-    const result = await this.db.collection('Warehouses').insertOne(doc);
-    console.log(`[WarehouseService] Created warehouse: ${warehouse.Name}`);
-
-    return { ...doc, _id: result.insertedId };
+    return this.warehouseRepo.find({
+      where,
+      relations: ['organization', 'tracker'],
+      order: { name: 'ASC' },
+    });
   }
 
-  // ==================== READ ====================
-
-  // ดึง warehouse ทั้งหมดของ org
-  async getWarehouses(orgId: number): Promise<Warehouse[]> {
-    if (!this.db) return [];
-    return this.db
-      .collection('Warehouses')
-      .find({ OrgId: orgId, IsActive: true })
-      .toArray();
+  async findById(id: number): Promise<WarehouseEntity | null> {
+    return this.warehouseRepo.findOne({
+      where: { id, isActive: true },
+      relations: ['organization', 'tracker'],
+    });
   }
 
-  // ดึง warehouse by ID
-  async getWarehouseById(id: string): Promise<Warehouse | null> {
-    if (!this.db) return null;
-    return this.db
-      .collection('Warehouses')
-      .findOne({ _id: new ObjectId(id) });
+  async findByCode(code: string): Promise<WarehouseEntity | null> {
+    return this.warehouseRepo.findOne({
+      where: { code, isActive: true },
+      relations: ['organization', 'tracker'],
+    });
   }
 
-  // ⭐ สำคัญ: หา warehouse จาก M5 Device ID (IMEI)
-  async getWarehouseByM5(m5DeviceId: string): Promise<Warehouse | null> {
-    if (!this.db) return null;
-    return this.db
-      .collection('Warehouses')
-      .findOne({ M5DeviceId: m5DeviceId, IsActive: true });
+  async create(data: {
+    name: string;
+    code: string;
+    type: 'ORIGIN' | 'DESTINATION' | 'HUB';
+    organizationId: number;
+    trackerId?: number;
+    latitude?: number;
+    longitude?: number;
+    address?: string;
+    phone?: string;
+  }): Promise<WarehouseEntity> {
+    const existing = await this.warehouseRepo.findOne({ where: { code: data.code } });
+    if (existing) {
+      throw new Error('Warehouse code already exists');
+    }
+
+    const warehouse = this.warehouseRepo.create({
+      ...data,
+      isActive: true,
+    });
+
+    this.logger.log(`Created warehouse: ${data.name}`);
+    return this.warehouseRepo.save(warehouse);
   }
 
-  // ดึง warehouse by Code
-  async getWarehouseByCode(orgId: number, code: string): Promise<Warehouse | null> {
-    if (!this.db) return null;
-    return this.db
-      .collection('Warehouses')
-      .findOne({ OrgId: orgId, Code: code, IsActive: true });
+  async update(id: number, data: Partial<WarehouseEntity>): Promise<WarehouseEntity> {
+    const warehouse = await this.warehouseRepo.findOne({ where: { id } });
+    if (!warehouse) {
+      throw new Error('Warehouse not found');
+    }
+
+    Object.assign(warehouse, data);
+    return this.warehouseRepo.save(warehouse);
   }
 
-  // ==================== UPDATE ====================
+  async assignTracker(warehouseId: number, trackerId: number): Promise<WarehouseEntity> {
+    const warehouse = await this.warehouseRepo.findOne({ where: { id: warehouseId } });
+    if (!warehouse) {
+      throw new Error('Warehouse not found');
+    }
 
-  async updateWarehouse(id: string, update: Partial<Warehouse>): Promise<Warehouse | null> {
-    if (!this.db) return null;
+    const tracker = await this.trackerRepo.findOne({ where: { id: trackerId, isActive: true } });
+    if (!tracker) {
+      throw new Error('Tracker not found');
+    }
 
-    const result = await this.db.collection('Warehouses').findOneAndUpdate(
-      { _id: new ObjectId(id) },
-      { 
-        $set: { 
-          ...update, 
-          UpdatedAt: new Date() 
-        } 
-      },
-      { returnDocument: 'after' }
-    );
+    const existingWarehouse = await this.warehouseRepo.findOne({
+      where: { trackerId, isActive: true },
+    });
+    if (existingWarehouse && existingWarehouse.id !== warehouseId) {
+      throw new Error(`Tracker already assigned to ${existingWarehouse.name}`);
+    }
 
-    return result;
+    warehouse.trackerId = trackerId;
+    this.logger.log(`Assigned tracker ${tracker.imei} to warehouse ${warehouse.name}`);
+
+    return this.warehouseRepo.save(warehouse);
   }
 
-  // ==================== DELETE ====================
-
-  async deleteWarehouse(id: string): Promise<boolean> {
-    if (!this.db) return false;
-
-    // Soft delete
-    const result = await this.db.collection('Warehouses').updateOne(
-      { _id: new ObjectId(id) },
-      { $set: { IsActive: false, UpdatedAt: new Date() } }
-    );
-
-    return result.modifiedCount > 0;
+  async delete(id: number): Promise<void> {
+    await this.warehouseRepo.update(id, { isActive: false });
   }
 }

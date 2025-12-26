@@ -1,5 +1,5 @@
 // src/app.module.ts
-import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
+import { Module, NestModule, MiddlewareConsumer, RequestMethod } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -16,6 +16,8 @@ import { User } from './users/entities/user.entity';
 import { AdminModule } from './admin/admin.module';
 import { Organization } from './organizations/entities/organization.entity';
 import { TagMovementModule } from './tag-movement/tag-movement.module';
+import { TrackerEntity } from './Tracker/entities/tracker.entity';
+import { WarehouseEntity } from './warehouse/warehouse.entity';
 
 // Middleware
 import { LoggerMiddleware, RateLimitMiddleware } from './common/middleware';
@@ -39,7 +41,7 @@ import { WarehouseModule } from './warehouse/warehouse.module';
         username: configService.get('POSTGRES_USER', 'postgres'),
         password: configService.get('POSTGRES_PASSWORD', 'password'),
         database: configService.get('POSTGRES_DB', 'warehouse_auth'),
-        entities: [User, Organization],
+        entities: [User, Organization,TrackerEntity,WarehouseEntity],
         synchronize: false,
         ssl: {
           rejectUnauthorized: false,
@@ -69,11 +71,14 @@ export class AppModule implements NestModule {
     // Logger - ทุก routes
     consumer
       .apply(LoggerMiddleware)
-      .forRoutes('*');
+      .forRoutes({ path: '*', method: RequestMethod.ALL});
 
     // Rate Limit - เฉพาะ routes สำคัญ
     consumer
       .apply(RateLimitMiddleware)
-      .forRoutes('auth/login', 'admin/*');
+      .forRoutes(
+        { path: 'auth/login', method: RequestMethod.ALL},
+        { path: 'admin/*', method: RequestMethod.ALL}
+      );
   }
 }

@@ -1,276 +1,128 @@
-// src/tracker/tracker.service.ts
+// src/trackers/trackers.service.ts
 import { Injectable, Logger } from '@nestjs/common';
-import { MongoClient, Db, Collection } from 'mongodb';
-
-export interface Tracker {
-  id: number;
-  imei: string;
-  serialNumber: string;
-  simNumber?: string;
-  brand?: string;
-  model?: string;
-  description?: string;
-  version?: string;
-  organizeId?: number;
-  organizeName?: string;
-  vehicleId?: number;
-  vehiclePlate?: string;
-  status: 'ACTIVE' | 'INACTIVE' | 'MAINTENANCE' | 'STOCKED';
-  lastSeen?: Date;
-  lastBattery?: number;
-  isActive: boolean;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface Organize {
-  id: number;
-  name: string;
-  address?: string;
-  addressInvoice?: string;
-  phone?: string;
-  email?: string;
-  isDeleted: boolean;
-  type?: string;
-  tinNumber?: string;
-  note?: string;
-}
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { TrackerEntity } from './entities/tracker.entity';
+import { Organization } from '../organizations/entities/organization.entity';
 
 @Injectable()
 export class TrackerService {
   private readonly logger = new Logger(TrackerService.name);
-  private db: Db | null = null;
 
-  constructor() {
-    const mongoUrl = process.env.MONGO_URI || 'mongodb://localhost:27017';
-    const dbName = process.env.MONGO_DB || 'warehouse';
-
-    const mongo = new MongoClient(mongoUrl);
-
-    mongo
-      .connect()
-      .then(() => {
-        this.db = mongo.db(dbName);
-        this.logger.log('MongoDB ready');
-      })
-      .catch((err) => {
-        this.logger.error('Mongo error:', err);
-      });
-  }
-
-  private trackerCol(): Collection<Tracker> | null {
-    if (!this.db) return null;
-    return this.db.collection<Tracker>('trackers');
-  }
-
-  private organizeCol(): Collection<Organize> | null {
-    if (!this.db) return null;
-    return this.db.collection<Organize>('organizes');
-  }
+  constructor(
+    @InjectRepository(TrackerEntity)
+    private trackerRepo: Repository<TrackerEntity>,
+    @InjectRepository(Organization)
+    private orgRepo: Repository<Organization>,
+  ) {}
 
   // ==================== GET ORGANIZE BY M5 IMEI ====================
-  async getOrganizeByM5(imei: string): Promise<{ data: Organize | null; message: string; isSuccess: boolean }> {
-    if (!imei) {
-      return { data: null, message: 'IMEI is required', isSuccess: false };
-    }
-
-    const trackerCol = this.trackerCol();
-    const organizeCol = this.organizeCol();
-
-    if (!trackerCol || !organizeCol) {
-      return { data: null, message: 'Database not ready', isSuccess: false };
-    }
+  async getOrganizeByM5(imei: string): Promise<Organization | null> {
+    if (!imei) return null;
 
     // หา Tracker จาก IMEI
-    const tracker = await trackerCol.findOne({ imei, isActive: true });
+    const tracker = await this.trackerRepo.findOne({
+      where: { imei, isActive: true },
+      relations: ['organization'],
+    });
 
     if (!tracker) {
       this.logger.warn(`Tracker not found for IMEI: ${imei}`);
-      return { data: null, message: 'Tracker not found', isSuccess: false };
+      return null;
     }
 
-    if (!tracker.organizeId) {
-      this.logger.warn(`Tracker ${imei} has no organizeId`);
-      return { data: null, message: 'Tracker has no organize assigned', isSuccess: false };
+    if (!tracker.organization) {
+      this.logger.warn(`Tracker ${imei} has no organization assigned`);
+      return null;
     }
 
-    // หา Organize จาก organizeId
-    const organize = await organizeCol.findOne({ id: tracker.organizeId, isActive: true });
-
-    if (!organize) {
-      this.logger.warn(`Organize not found for id: ${tracker.organizeId}`);
-      return { data: null, message: 'Organize not found', isSuccess: false };
-    }
-
-    this.logger.log(`Found organize for IMEI ${imei}: ${organize.name}`);
-
-    return {
-      data: {
-        id: organize.id,
-        name: organize.name,
-        address: organize.address,
-        addressInvoice: organize.addressInvoice,
-        phone: organize.phone,
-        email: organize.email,
-        isDeleted: organize.isDeleted ?? false,
-        type: organize.type,
-        tinNumber: organize.tinNumber,
-        note: organize.note,
-      },
-      message: 'Success',
-      isSuccess: true,
-    };
+    this.logger.log(`Found org for IMEI ${imei}: ${tracker.organization.name}`);
+    return tracker.organization;
   }
 
-  // ==================== GET ALL TRACKERS ====================
-  async getAllTrackers(): Promise<Tracker[]> {
-    const col = this.trackerCol();
-    if (!col) return [];
-    return col.find({ isActive: true }).sort({ id: 1 }).toArray();
+  // ==================== CRUD ====================
+
+  async findAll(): Promise<TrackerEntity[]> {
+    return this.trackerRepo.find({
+      where: { isActive: true },
+      relations: ['organization'],
+      order: { id: 'ASC' },
+    });
   }
 
-  // ==================== GET TRACKER BY IMEI ====================
-  async getTrackerByImei(imei: string): Promise<Tracker | null> {
-    const col = this.trackerCol();
-    if (!col) return null;
-    return col.findOne({ imei, isActive: true });
+  async findByImei(imei: string): Promise<TrackerEntity | null> {
+    return this.trackerRepo.findOne({
+      where: { imei, isActive: true },
+      relations: ['organization'],
+    });
   }
 
-  // ==================== ADD SINGLE TRACKER ====================
-  async addTracker(data: {
-    serial: string;
+  async findById(id: number): Promise<TrackerEntity | null> {
+    return this.trackerRepo.findOne({
+      where: { id, isActive: true },
+      relations: ['organization'],
+    });
+  }
+
+  async create(data: {
     imei: string;
+    serialNumber?: string;
     brand?: string;
     model?: string;
     description?: string;
     version?: string;
-  }): Promise<{ isSuccess: boolean; message: string; imei?: string }> {
-    const col = this.trackerCol();
-    if (!col) {
-      return { isSuccess: false, message: 'Database not ready' };
-    }
-
+  }): Promise<TrackerEntity> {
     // Check duplicate IMEI
-    const existing = await col.findOne({ imei: data.imei });
+    const existing = await this.trackerRepo.findOne({ where: { imei: data.imei } });
     if (existing) {
-      return { isSuccess: false, message: 'IMEI already exists', imei: data.imei };
+      throw new Error('IMEI already exists');
     }
 
-    // Generate next ID
-    const last = await col.find().sort({ id: -1 }).limit(1).toArray();
-    const nextId = last.length > 0 ? last[0].id + 1 : 1;
-
-    const now = new Date();
-    const newTracker: Tracker = {
-      id: nextId,
-      imei: data.imei,
-      serialNumber: data.serial,
-      brand: data.brand,
-      model: data.model,
-      description: data.description,
-      version: data.version,
+    const tracker = this.trackerRepo.create({
+      ...data,
       status: 'STOCKED',
       isActive: true,
-      createdAt: now,
-      updatedAt: now,
-    };
+    });
 
-    await col.insertOne(newTracker);
-    this.logger.log(`Added tracker: ${data.imei}`);
-
-    return { isSuccess: true, message: 'Tracker added successfully', imei: data.imei };
+    return this.trackerRepo.save(tracker);
   }
 
-  // ==================== ADD BATCH TRACKERS ====================
-  async addBatchTrackers(trackers: Array<{
-    Serial: string;
-    Imie: string;
-    Brand?: string;
-    Model?: string;
-    Description?: string;
-    Version?: string;
-  }>): Promise<Array<{ imie: string; isSuccess: boolean; errorMessage?: string }>> {
-    const results: Array<{ imie: string; isSuccess: boolean; errorMessage?: string }> = [];
-
-    for (const t of trackers) {
-      const result = await this.addTracker({
-        serial: t.Serial,
-        imei: t.Imie,
-        brand: t.Brand,
-        model: t.Model,
-        description: t.Description,
-        version: t.Version,
-      });
-
-      results.push({
-        imie: t.Imie,
-        isSuccess: result.isSuccess,
-        errorMessage: result.isSuccess ? undefined : result.message,
-      });
-    }
-
-    return results;
-  }
-
-  // ==================== ASSIGN TRACKER TO ORGANIZE ====================
-  async assignToOrganize(imei: string, organizeId: number): Promise<{ isSuccess: boolean; message: string }> {
-    const trackerCol = this.trackerCol();
-    const organizeCol = this.organizeCol();
-
-    if (!trackerCol || !organizeCol) {
-      return { isSuccess: false, message: 'Database not ready' };
-    }
-
-    // Check tracker exists
-    const tracker = await trackerCol.findOne({ imei, isActive: true });
+  async assignToOrganization(imei: string, organizationId: number): Promise<TrackerEntity> {
+    const tracker = await this.trackerRepo.findOne({ where: { imei, isActive: true } });
     if (!tracker) {
-      return { isSuccess: false, message: 'Tracker not found' };
+      throw new Error('Tracker not found');
     }
 
-    // Check organize exists
-    const organize = await organizeCol.findOne({ id: organizeId, isActive: true });
-    if (!organize) {
-      return { isSuccess: false, message: 'Organize not found' };
+    const org = await this.orgRepo.findOne({ where: { id: organizationId } });
+    if (!org) {
+      throw new Error('Organization not found');
     }
 
-    // Update tracker
-    await trackerCol.updateOne(
-      { imei },
-      {
-        $set: {
-          organizeId: organize.id,
-          organizeName: organize.name,
-          status: 'ACTIVE',
-          updatedAt: new Date(),
-        },
-      },
-    );
+    tracker.organizationId = organizationId;
+    tracker.status = 'ACTIVE';
 
-    this.logger.log(`Assigned tracker ${imei} to organize ${organize.name}`);
-    return { isSuccess: true, message: 'Tracker assigned successfully' };
+    this.logger.log(`Assigned tracker ${imei} to org ${org.name}`);
+    return this.trackerRepo.save(tracker);
   }
 
-  // ==================== UPDATE TRACKER STATUS ====================
-  async updateStatus(imei: string, status: Tracker['status']): Promise<{ isSuccess: boolean; message: string }> {
-    const col = this.trackerCol();
-    if (!col) {
-      return { isSuccess: false, message: 'Database not ready' };
+  async updateStatus(imei: string, status: TrackerEntity['status']): Promise<TrackerEntity> {
+    const tracker = await this.trackerRepo.findOne({ where: { imei, isActive: true } });
+    if (!tracker) {
+      throw new Error('Tracker not found');
     }
 
-    const result = await col.updateOne(
-      { imei, isActive: true },
-      {
-        $set: {
-          status,
-          updatedAt: new Date(),
-        },
-      },
+    tracker.status = status;
+    return this.trackerRepo.save(tracker);
+  }
+
+  async updateLastSeen(imei: string, lastSeen: Date, lastBattery?: number): Promise<void> {
+    await this.trackerRepo.update(
+      { imei },
+      { lastSeen, lastBattery, updatedAt: new Date() },
     );
+  }
 
-    if (result.matchedCount === 0) {
-      return { isSuccess: false, message: 'Tracker not found' };
-    }
-
-    return { isSuccess: true, message: 'Status updated successfully' };
+  async delete(id: number): Promise<void> {
+    await this.trackerRepo.update(id, { isActive: false });
   }
 }

@@ -28,7 +28,8 @@ export class TagController {
   }
 
   @Get('present')
-  getPresent(){
+  getPresent(@Query('orgId') orgId?: string){
+    const orgIdNum = orgId ? parseInt(orgId, 10) : undefined;
     return this.tagService.getPresentTags();
   }
 

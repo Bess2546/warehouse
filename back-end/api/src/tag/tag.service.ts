@@ -172,8 +172,11 @@ export class TagService {
   }
 
   // ดึงรายการ tag ที่อยู่ในคลังตอนนี้ เรียงตามเวลาที่เห็นล่าสุด
-  async getPresentTags() {
+  async getPresentTags(orgId?: number) {
     if (!this.db) return [];
+
+    const filter = orgId ? {OrgId: orgId} : {};
+
     return this.db
       .collection('TagLastSeenProcessed')
       .find({})
@@ -198,6 +201,8 @@ export class TagService {
       console.warn('[TagService] DB not ready yet, skip message');
       return;
     }
+
+  
 
     // แนะนำ: ตอนนี้ให้ใช้ handleGatewaySnapshot แทนฟังก์ชันนี้
     console.warn('[TagService] saveFromMqtt is deprecated, use handleGatewaySnapshot instead');

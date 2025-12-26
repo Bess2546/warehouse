@@ -4,14 +4,14 @@ import { MqttService } from './mqtt.service';
 import { TagModule } from '../tag/tag.module';
 import { TagMovementModule } from '../tag-movement/tag-movement.module';
 import { WarehouseModule } from '../warehouse/warehouse.module';
-import { TmsModule } from '../tms/tms.module';
+import { TrackerModule } from "../Tracker/tracker.module";
 
 @Module({
   imports: [
     TagModule,
     TagMovementModule,
     WarehouseModule,
-    TmsModule,
+    TrackerModule,
   ],
   providers: [MqttService],
   exports: [MqttService],

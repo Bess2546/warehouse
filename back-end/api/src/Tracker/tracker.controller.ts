@@ -1,78 +1,123 @@
-//src/tracker/tracker.controller.ts
-import { Controller,Get, Post, Body, Query, Param } from "@nestjs/common";
-import { TrackerService } from "./tracker.service";
-import { get } from "http";
-import { count } from "console";
+// src/trackers/trackers.controller.ts
+import { Controller, Get, Post, Put, Delete, Body, Param, Query } from '@nestjs/common';
+import { TrackerService } from './tracker.service';
 
-//DTO for adding trackers (matching TMS API)
-class TracerExcelNew{
-    Serial: string;
-    Imie: string;
-    Brand?: string;
-    Model?: string;
-    Description?: string;
-    Version?: string;
+class CreateTrackerDto {
+  imei: string;
+  serialNumber?: string;
+  brand?: string;
+  model?: string;
+  description?: string;
+  version?: string;
 }
 
-class addBatchTrackersDto{
-    trackers: TracerExcelNew[];
+class AssignOrgDto {
+  organizationId: number;
 }
 
-class AssignOrganizeDto{
-    imei:string;
-    organizeId:number;
+class UpdateStatusDto {
+  status: 'ACTIVE' | 'INACTIVE' | 'MAINTENANCE' | 'STOCKED';
 }
 
-@Controller('Tracker')
-export class TrackerController{
-    constructor(private readonly trackerService:TrackerService){}
+@Controller('trackers')
+export class TrackerController {
+  constructor(private readonly trackerService: TrackerService) {}
 
-    //GET /api/tracker/GetOrganizedByM5?imei=?
-    @Get('GetOrganizeByM5')
-    async getOrganizeByM5(@Query('imei') imei:string){
-        return this.trackerService.getOrganizeByM5(imei);
-    }
+  // GET /api/trackers - ดึง trackers ทั้งหมด
+  @Get()
+  async findAll() {
+    const trackers = await this.trackerService.findAll();
+    return {
+      count: trackers.length,
+      trackers,
+    };
+  }
 
-    //POST /api/Tracker/AddBatchTrackerNew
-    @Post('AddBatchTrackerNew')
-    async addBatchTrackers(@Body() dto: addBatchTrackersDto){
-        const result = await this.trackerService.addBatchTrackers(dto.trackers);
-        return result;
+  // GET /api/trackers/imei/:imei - ดึง tracker by IMEI
+  @Get('imei/:imei')
+  async findByImei(@Param('imei') imei: string) {
+    const tracker = await this.trackerService.findByImei(imei);
+    if (!tracker) {
+      return { success: false, message: 'Tracker not found' };
     }
+    return { success: true, data: tracker };
+  }
 
-    //GET /api/tracker/all
-    @Get('all')
-    async addAllTrackers(){
-        const trackers = await this.trackerService.getAllTrackers();
-        return{
-            success:true,
-            count: trackers.length,
-            data: trackers,
-        };
+  // GET /api/trackers/organize/:imei - ดึง organization ของ M5
+  @Get('organize/:imei')
+  async getOrganize(@Param('imei') imei: string) {
+    const org = await this.trackerService.getOrganizeByM5(imei);
+    if (!org) {
+      return { success: false, message: 'Organization not found for this IMEI' };
     }
+    return { success: true, data: org };
+  }
 
-    // GET /api/Tracker/byImei?imei=xxx
-    @Get('byImei')
-    async getTrackerByImei(@Query('imei') imei:string){
-        const tracker = await this.trackerService.getTrackerByImei(imei);
-    if (!tracker){
-            return {seccess: false, message: 'Tracker not found'};
-        }
-        return { success: true, data: tracker };
+  // GET /api/trackers/:id - ดึง tracker by ID
+  @Get(':id')
+  async findById(@Param('id') id: string) {
+    const tracker = await this.trackerService.findById(Number(id));
+    if (!tracker) {
+      return { success: false, message: 'Tracker not found' };
     }
+    return { success: true, data: tracker };
+  }
 
-    // POST /api/tracker/assign
-    @Post('assign')
-    async assignToOrganize(@Body() dto: AssignOrganizeDto){
-        return this.trackerService.assignToOrganize(dto.imei, dto.organizeId);
+  // POST /api/trackers - สร้าง tracker ใหม่
+  @Post()
+  async create(@Body() dto: CreateTrackerDto) {
+    try {
+      const tracker = await this.trackerService.create(dto);
+      return {
+        success: true,
+        message: 'Tracker created successfully',
+        data: tracker,
+      };
+    } catch (err) {
+      return { success: false, message: err.message };
     }
+  }
 
-    // POST /api/tracker/status
-    @Post('status')
-    async updateStatus(@Body() dto: {imei: string; status:string}){
-        return this.trackerService.updateStatus(
-            dto.imei,
-            dto.status as 'ACTIVE' | 'INACTIVE' | 'MAINTENANCE' | 'STOCKED'
-        );
+  // PUT /api/trackers/:imei/assign - assign tracker ให้ organization
+  @Put(':imei/assign')
+  async assignToOrg(
+    @Param('imei') imei: string,
+    @Body() dto: AssignOrgDto,
+  ) {
+    try {
+      const tracker = await this.trackerService.assignToOrganization(imei, dto.organizationId);
+      return {
+        success: true,
+        message: 'Tracker assigned successfully',
+        data: tracker,
+      };
+    } catch (err) {
+      return { success: false, message: err.message };
     }
+  }
+
+  // PUT /api/trackers/:imei/status - update status
+  @Put(':imei/status')
+  async updateStatus(
+    @Param('imei') imei: string,
+    @Body() dto: UpdateStatusDto,
+  ) {
+    try {
+      const tracker = await this.trackerService.updateStatus(imei, dto.status);
+      return {
+        success: true,
+        message: 'Status updated successfully',
+        data: tracker,
+      };
+    } catch (err) {
+      return { success: false, message: err.message };
+    }
+  }
+
+  // DELETE /api/trackers/:id - ลบ tracker
+  @Delete(':id')
+  async delete(@Param('id') id: string) {
+    await this.trackerService.delete(Number(id));
+    return { success: true, message: 'Tracker deleted' };
+  }
 }

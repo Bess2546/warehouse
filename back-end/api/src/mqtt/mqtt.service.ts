@@ -3,9 +3,9 @@ import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
 import { connect, MqttClient } from 'mqtt';
 import { TagService } from '../tag/tag.service';
 import { TagScanBufferService } from '../tag-movement/tag-scan-buffer.service';
-import { WarehouseService } from '../warehouse/warehouse.service';
+import { WarehouseService } from '../warehouse/warehouse.service';  
+import { TrackerService } from '../Tracker/tracker.service';           
 import { macToTagUid } from '../common/source-type';
-import { TmsService } from '../tms/tms.service';
 
 @Injectable()
 export class MqttService implements OnModuleInit {
@@ -14,9 +14,9 @@ export class MqttService implements OnModuleInit {
 
   constructor(
     private readonly tagService: TagService,
-    private readonly tmsService: TmsService,
+    private readonly trackerService: TrackerService,        
     private readonly scanBufferService: TagScanBufferService,
-    private readonly warehouseService: WarehouseService,
+    private readonly warehousesService: WarehouseService,  
   ) {
     this.logger.log('MqttService created');
   }
@@ -48,7 +48,9 @@ export class MqttService implements OnModuleInit {
 
         const eventIso = new Date().toISOString();
         const imei = json.IMEI_ID || json.imei || json.gw_id || null;
-        const org = imei ? await this.tmsService.getOrganizeByM5(imei) : null;
+        
+        // ดึง Organization จาก PostgreSQL
+        const org = imei ? await this.trackerService.getOrganizeByM5(imei) : null;
 
         if (org) {
           this.logger.log(`From IMEI ${imei} → Org: ${org.id} - ${org.name}`);
@@ -66,7 +68,7 @@ export class MqttService implements OnModuleInit {
           raw: t.raw ?? null,
         }));
 
-        // 1. บันทึกลง TagLastSeenProcessed (เหมือนเดิม)
+        // 1. บันทึกลง TagLastSeenProcessed (MongoDB)
         const unifiedPayload = {
           SourceType: 'M5',
           SourceId: imei,
@@ -94,16 +96,17 @@ export class MqttService implements OnModuleInit {
     tags: Array<{ TagUid: string; Rssi: number }>,
   ) {
     try {
-      // 1. หา warehouse ที่ M5 นี้ติดตั้งอยู่
-      const warehouse = await this.warehouseService.getWarehouseByM5(m5DeviceId);
+      // 1. หา warehouse ที่ M5 นี้ติดตั้งอยู่ (จาก PostgreSQL)
+      const warehouse = await this.warehousesService.getWarehouseByM5(m5DeviceId);
 
-      if (!warehouse || !warehouse._id) {
+      if (!warehouse) {
         this.logger.debug(`No warehouse for M5: ${m5DeviceId}`);
         return;
       }
 
-      const warehouseId = warehouse._id.toString();
-      const warehouseName = warehouse.Name;
+      // PostgreSQL fields: id, name (ตัวเล็ก)
+      const warehouseId = warehouse.id.toString();
+      const warehouseName = warehouse.name;
 
       this.logger.debug(`Processing ${tags.length} tags at ${warehouseName}`);
 
