@@ -1,5 +1,9 @@
 // src/auth/auth.service.ts
-import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  BadRequestException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -18,7 +22,6 @@ export class AuthService {
     private refreshTokenRepository: Repository<RefreshToken>,
   ) {}
 
-  // ==================== VALIDATE USER ====================
   async validateUser(username: string, password: string): Promise<any> {
     const user = await this.usersService.findByUsernameWithOrg(username);
 
@@ -40,7 +43,6 @@ export class AuthService {
     return result;
   }
 
-  // ==================== LOGIN ====================
   async login(loginDto: LoginDto, deviceInfo?: string) {
     const user = await this.validateUser(loginDto.username, loginDto.password);
 
@@ -48,18 +50,13 @@ export class AuthService {
       throw new UnauthorizedException('Username หรือ Password ไม่ถูกต้อง');
     }
 
-    // สร้าง Access Token (อายุสั้น 30 นาที)
     const accessToken = this.generateAccessToken(user);
-
-    // สร้าง Refresh Token (อายุยาว 7 วัน)
     const refreshToken = await this.generateRefreshToken(user.id, deviceInfo);
-
-    // อัพเดท lastLogin
     await this.usersService.updateLastLogin(user.id);
 
     return {
       access_token: accessToken,
-      refresh_token: refreshToken, // จะส่งเป็น HttpOnly Cookie
+      refresh_token: refreshToken,
       user: {
         id: user.id,
         username: user.username,
@@ -72,7 +69,6 @@ export class AuthService {
     };
   }
 
-  // ==================== GENERATE ACCESS TOKEN ====================
   generateAccessToken(user: any): string {
     const payload = {
       sub: user.id,
@@ -82,26 +78,27 @@ export class AuthService {
     };
 
     return this.jwtService.sign(payload, {
-      expiresIn: '30m', // 30 นาที
+      expiresIn: '30m',
     });
   }
+  async generateRefreshToken(
+    userId: number,
+    deviceInfo?: string,
+  ): Promise<string> {
+   
+    const tokenId = crypto.randomBytes(16).toString('hex');
+    const tokenSecret = crypto.randomBytes(32).toString('hex');
 
-  // ==================== GENERATE REFRESH TOKEN ====================
-  async generateRefreshToken(userId: number, deviceInfo?: string): Promise<string> {
-    // สร้าง random token
-    const token = crypto.randomBytes(64).toString('hex');
+    // Hash เฉพาะ secret (bcrypt 1 ครั้งตอนสร้าง)
+    const secretHash = await bcrypt.hash(tokenSecret, 10);
 
-    // Hash token ก่อนเก็บใน DB
-    const tokenHash = await bcrypt.hash(token, 10);
-
-    // กำหนดวันหมดอายุ (7 วัน)
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
-    // บันทึกลง DB
     const refreshToken = this.refreshTokenRepository.create({
       userId,
-      tokenHash,
+      tokenId,
+      secretHash,
       expiresAt,
       deviceInfo: deviceInfo ?? undefined,
       revoked: false,
@@ -109,47 +106,45 @@ export class AuthService {
 
     await this.refreshTokenRepository.save(refreshToken);
 
-    return token; // ส่ง token จริงไปให้ client
+    return `${tokenId}.${tokenSecret}`;
   }
 
-  // ==================== REFRESH TOKEN ====================
   async refreshAccessToken(refreshToken: string) {
-    // หา token ที่ยังไม่หมดอายุและยังไม่ถูก revoke
-    const tokens = await this.refreshTokenRepository.find({
-      where: { revoked: false },
+    // แยก token เป็น 2 ส่วน
+    const [tokenId, tokenSecret] = refreshToken.split('.');
+
+    if (!tokenId || !tokenSecret) {
+      throw new UnauthorizedException('Invalid refresh token format');
+    }
+
+    
+    const token = await this.refreshTokenRepository.findOne({
+      where: { tokenId, revoked: false },
       relations: ['user', 'user.organization'],
     });
 
-    // หา token ที่ตรงกัน
-    let matchedToken: RefreshToken | null = null;
-    for (const t of tokens) {
-      const isMatch = await bcrypt.compare(refreshToken, t.tokenHash);
-      if (isMatch) {
-        matchedToken = t;
-        break;
-      }
-    }
-
-    if (!matchedToken) {
+    if (!token) {
       throw new UnauthorizedException('Invalid refresh token');
     }
 
-    // เช็คว่าหมดอายุหรือยัง
-    if (new Date() > matchedToken.expiresAt) {
-      // Revoke token ที่หมดอายุ
-      matchedToken.revoked = true;
-      await this.refreshTokenRepository.save(matchedToken);
+    const isValid = await bcrypt.compare(tokenSecret, token.secretHash);
+    if (!isValid) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    if (new Date() > token.expiresAt) {
+      token.revoked = true;
+      await this.refreshTokenRepository.save(token);
       throw new UnauthorizedException('Refresh token expired');
     }
 
-    // ============ TOKEN ROTATION ============
-    // Revoke token เก่า
-    matchedToken.revoked = true;
-    await this.refreshTokenRepository.save(matchedToken);
-
-    // สร้าง token ใหม่
-    const user = matchedToken.user;
-    const newRefreshToken = await this.generateRefreshToken(user.id, matchedToken.deviceInfo ?? undefined);
+    token.revoked = true;
+    await this.refreshTokenRepository.save(token);
+    const user = token.user;
+    const newRefreshToken = await this.generateRefreshToken(
+      user.id,
+      token.deviceInfo ?? undefined,
+    );
     const newAccessToken = this.generateAccessToken(user);
 
     return {
@@ -167,26 +162,29 @@ export class AuthService {
     };
   }
 
-  // ==================== LOGOUT ====================
   async logout(refreshToken: string) {
-    // หา token ที่ตรงกัน
-    const tokens = await this.refreshTokenRepository.find({
-      where: { revoked: false },
+    const [tokenId, tokenSecret] = refreshToken.split('.');
+
+    if (!tokenId || !tokenSecret) {
+      return { message: 'Logout สำเร็จ' };
+    }
+
+    const token = await this.refreshTokenRepository.findOne({
+      where: { tokenId, revoked: false },
     });
 
-    for (const t of tokens) {
-      const isMatch = await bcrypt.compare(refreshToken, t.tokenHash);
-      if (isMatch) {
-        t.revoked = true;
-        await this.refreshTokenRepository.save(t);
-        return { message: 'Logout สำเร็จ' };
+    if (token) {
+      
+      const isValid = await bcrypt.compare(tokenSecret, token.secretHash);
+      if (isValid) {
+        token.revoked = true;
+        await this.refreshTokenRepository.save(token);
       }
     }
 
     return { message: 'Logout สำเร็จ' };
   }
 
-  // ==================== LOGOUT ALL DEVICES ====================
   async logoutAllDevices(userId: number) {
     await this.refreshTokenRepository.update(
       { userId, revoked: false },
@@ -196,7 +194,6 @@ export class AuthService {
     return { message: 'Logout จากทุกอุปกรณ์สำเร็จ' };
   }
 
-  // ==================== GET ACTIVE SESSIONS ====================
   async getActiveSessions(userId: number) {
     const sessions = await this.refreshTokenRepository.find({
       where: { userId, revoked: false },
@@ -211,7 +208,6 @@ export class AuthService {
     }));
   }
 
-  // ==================== REVOKE SESSION ====================
   async revokeSession(userId: number, sessionId: number) {
     const session = await this.refreshTokenRepository.findOne({
       where: { id: sessionId, userId },
@@ -227,7 +223,6 @@ export class AuthService {
     return { message: 'Revoke session สำเร็จ' };
   }
 
-  // ==================== CLEANUP EXPIRED TOKENS ====================
   async cleanupExpiredTokens() {
     const result = await this.refreshTokenRepository
       .createQueryBuilder()
@@ -239,7 +234,6 @@ export class AuthService {
     return { deleted: result.affected };
   }
 
-  // ==================== GET PROFILE ====================
   async getProfile(userId: number) {
     const user = await this.usersService.findByIdWithOrg(userId);
 
@@ -251,26 +245,24 @@ export class AuthService {
     return result;
   }
 
-  // ==================== CHANGE PASSWORD ====================
-  async changePassword(userId: number, currentPassword: string, newPassword: string) {
+  async changePassword(
+    userId: number,
+    currentPassword: string,
+    newPassword: string,
+  ) {
     const user = await this.usersService.findOne(userId);
 
     if (!user) {
       throw new UnauthorizedException('ไม่พบผู้ใช้');
     }
 
-    // ตรวจสอบรหัสผ่านปัจจุบัน
     const isValid = await bcrypt.compare(currentPassword, user.password);
     if (!isValid) {
       throw new BadRequestException('รหัสผ่านปัจจุบันไม่ถูกต้อง');
     }
 
-    // Hash รหัสผ่านใหม่
     const hashedPassword = await bcrypt.hash(newPassword, 10);
-
     await this.usersService.update(userId, { password: hashedPassword });
-
-    // Revoke ทุก refresh token (บังคับ login ใหม่)
     await this.logoutAllDevices(userId);
 
     return { message: 'เปลี่ยนรหัสผ่านสำเร็จ กรุณาเข้าสู่ระบบใหม่' };
