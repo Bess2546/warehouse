@@ -1,6 +1,8 @@
 // src/tag/tag.controller.ts
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards} from '@nestjs/common';
 import { TagService } from './tag.service';
+import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { CurrentUser } from "../auth/decorators";
 
 
 @Controller('tag')
@@ -36,5 +38,12 @@ export class TagController {
   @Get('timeline')
   getTimeline(@Query('limit') limit?: string){
     return this.tagService.getInOutTimeline(limit ? Number(limit) : 50);
+  }
+
+  @Get('list')
+  @UseGuards(JwtAuthGuard)
+  async getList(@CurrentUser() userInfo:any) {
+    const orgId = userInfo.role === 'user' ? userInfo.organizationId : undefined;
+    return this.tagService.getAllTags(orgId);
   }
 }

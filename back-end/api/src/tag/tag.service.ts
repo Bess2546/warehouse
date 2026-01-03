@@ -121,7 +121,7 @@ export class TagService {
     if (!this.db) return [];
     return this.db
       .collection('TagLastSeenProcessed')
-      .find({ Present: true }) // เปลี่ยนเป็น P ใหญ่ให้ตรงกับที่เขียนจริง
+      .find({ Present: true }) 
       .toArray();
   }
 
@@ -136,7 +136,6 @@ export class TagService {
       .toArray();
   }
 
-  // Dashboard summary (ไม่มี in/out แล้ว นับเฉพาะ present + by zone + จำนวน snapshot ใน 24 ชม.)
   async getDashboardSummary() {
     if (!this.db) return null;
 
@@ -167,7 +166,7 @@ export class TagService {
       present_count,
       total_tags,
       by_zone,
-      last24h: { scans: scans24h }, // เดิมเคยมี in/out ตอนนี้เหลือแค่จำนวน scan ใน 24 ชม.
+      last24h: { scans: scans24h }, 
     };
   }
 
@@ -179,12 +178,11 @@ export class TagService {
 
     return this.db
       .collection('TagLastSeenProcessed')
-      .find({})
+      .find({filter})
       .sort({ LastSeenTime: -1 })
       .toArray();
   }
 
-  // เดิมเป็น timeline เข้า/ออก ตอนนี้เปลี่ยนเป็น snapshot timeline เฉย ๆ
   async getInOutTimeline(limit = 50) {
     if (!this.db) return [];
     return this.db
@@ -195,17 +193,29 @@ export class TagService {
       .toArray();
   }
 
-  // ---------------- WRITE (old per-tag method, ถ้าไม่ใช้แล้วจะลบทิ้งก็ได้) ----------------
   async saveFromMqtt(payload: any) {
     if (!this.db) {
       console.warn('[TagService] DB not ready yet, skip message');
       return;
     }
-
   
-
-    // แนะนำ: ตอนนี้ให้ใช้ handleGatewaySnapshot แทนฟังก์ชันนี้
     console.warn('[TagService] saveFromMqtt is deprecated, use handleGatewaySnapshot instead');
     await this.handleGatewaySnapshot(payload);
   }
+
+  async getAllTags(orgId?: number){
+    if (!this.db) return [];
+
+    const filter: any = {};
+    if (orgId) {
+      filter.OrgId = orgId;
+    }
+
+    return this.db
+      .collection('TagLastSeenProcessed')
+      .find(filter)
+      .sort({ EventTime: -1})
+      .toArray()
+  }
+
 }

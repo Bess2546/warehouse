@@ -10,11 +10,14 @@ import { UsersModule } from '../users/users.module';
 import { JwtStrategy } from './jwt.strategy';
 import { LocalStrategy } from "../auth/local.strategy";
 import { RefreshToken } from "./entities/refresh-token.entity";
+import { ScheduleModule } from "@nestjs/schedule";
+import { TokenCleanupService } from "./token-cleanup.service";
 
 @Module({
   imports: [
     UsersModule,
     PassportModule,
+    ScheduleModule.forRoot(),
     TypeOrmModule.forFeature([RefreshToken]),
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -28,7 +31,7 @@ import { RefreshToken } from "./entities/refresh-token.entity";
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, LocalStrategy],
+  providers: [AuthService, JwtStrategy, LocalStrategy,TokenCleanupService],
   exports: [AuthService],
 })
 export class AuthModule {}

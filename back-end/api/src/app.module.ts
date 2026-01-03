@@ -75,7 +75,7 @@ export class AppModule implements NestModule {
       .apply(LoggerMiddleware)
       .forRoutes({ path: '*', method: RequestMethod.ALL});
 
-    // Rate Limit - เฉพาะ routes สำคัญ
+    
     consumer
       .apply(RateLimitMiddleware)
       .forRoutes(

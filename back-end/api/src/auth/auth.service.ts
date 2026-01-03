@@ -89,11 +89,10 @@ export class AuthService {
     const tokenId = crypto.randomBytes(16).toString('hex');
     const tokenSecret = crypto.randomBytes(32).toString('hex');
 
-    // Hash เฉพาะ secret (bcrypt 1 ครั้งตอนสร้าง)
     const secretHash = await bcrypt.hash(tokenSecret, 10);
 
     const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7);
+    expiresAt.setDate(expiresAt.getDate() + 1);
 
     const refreshToken = this.refreshTokenRepository.create({
       userId,

@@ -425,8 +425,17 @@ export default function ShipmentsPage() {
 
       {/* Create Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl max-w-md w-full p-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        {/* Backdrop */}
+        <div
+          className="absolute inset-0 bg-black/30 backdrop-blur-sm"
+          onClick={() =>{
+            setShowCreateModal(false);
+            setFormError("")
+          }}
+        />
+          
+          <div className="relative bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
             <h2 className="text-xl font-bold mb-4">สร้าง Shipment ใหม่</h2>
 
             {formError && (
@@ -547,7 +556,7 @@ export default function ShipmentsPage() {
 
       {/* Detail Modal */}
       {showDetailModal && selectedShipment && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl max-w-2xl w-full p-6 max-h-[80vh] overflow-y-auto">
             <div className="flex justify-between items-start mb-4">
               <div>
