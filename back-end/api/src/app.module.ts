@@ -19,7 +19,8 @@ import { TagMovementModule } from './tag-movement/tag-movement.module';
 import { TrackerEntity } from './Tracker/entities/tracker.entity';
 import { WarehouseEntity } from './warehouse/warehouse.entity';
 import { RefreshToken } from ".//auth/entities/refresh-token.entity";
-
+import { ShipmentsModule } from './shipments/shipments.module';
+import { Shipment, ShipmentItem } from "./shipments/entities";
 import { LoggerMiddleware, RateLimitMiddleware } from './common/middleware';
 import { WarehouseModule } from './warehouse/warehouse.module';
 
@@ -41,7 +42,7 @@ import { WarehouseModule } from './warehouse/warehouse.module';
         username: configService.get('POSTGRES_USER', 'postgres'),
         password: configService.get('POSTGRES_PASSWORD', 'password'),
         database: configService.get('POSTGRES_DB', 'warehouse_auth'),
-        entities: [User, Organization,TrackerEntity,WarehouseEntity, RefreshToken],
+        entities: [User, Organization,TrackerEntity,WarehouseEntity, RefreshToken, Shipment, ShipmentItem],
         synchronize: false,
         ssl: {
           rejectUnauthorized: false,
@@ -60,6 +61,7 @@ import { WarehouseModule } from './warehouse/warehouse.module';
     AdminModule,
     TagMovementModule,
     WarehouseModule,
+    ShipmentsModule,
   ],
 
   controllers: [TimelineController],

@@ -25,7 +25,7 @@ interface User {
 }
 
 export default function AdminUserPage() {
-  const { user, token, isLoading, isAdmin } = useAuth();
+  const { user, accessToken, isLoading, isAdmin } = useAuth();
   const router = useRouter();
 
   const [users, setUsers] = useState<User[]>([]);
@@ -58,16 +58,16 @@ export default function AdminUserPage() {
   }, [user, isLoading, isAdmin, router]);
 
   useEffect(() => {
-    if (token && isAdmin) {
+    if (accessToken && isAdmin) {
       fetchUsers();
       fetchOrganizations();
     }
-  }, [token, isAdmin]);
+  }, [accessToken, isAdmin]);
 
   const fetchUsers = async () => {
     try {
       const res = await fetch("/api/admin/users", {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${accessToken}` },
       });
       if (res.ok) {
         const data = await res.json();
@@ -83,7 +83,7 @@ export default function AdminUserPage() {
   const fetchOrganizations = async () => {
     try {
       const res = await fetch("/api/admin/organizations", {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${accessToken}` },
       });
       if (res.ok) {
         const data = await res.json();
@@ -104,7 +104,7 @@ export default function AdminUserPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify({
           ...formData,
@@ -150,7 +150,7 @@ export default function AdminUserPage() {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
+            Authorization: `Bearer ${accessToken}`,
           },
           body: JSON.stringify({ newPassword }),
         }
@@ -179,7 +179,7 @@ export default function AdminUserPage() {
     try {
       const res = await fetch(`/api/admin/users/${userId}`, {
         method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${accessToken}` },
       });
 
       if (res.ok) {

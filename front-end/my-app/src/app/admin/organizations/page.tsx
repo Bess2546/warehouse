@@ -17,7 +17,7 @@ interface Organization {
 }
 
 export default function AdminOrganizationsPage() {
-  const { user, token, isLoading, isSuperAdmin } = useAuth();
+  const { user, accessToken, isLoading, isSuperAdmin } = useAuth();
   const router = useRouter();
   
   const [organizations, setOrganizations] = useState<Organization[]>([]);
@@ -49,15 +49,15 @@ export default function AdminOrganizationsPage() {
   }, [user, isLoading, isSuperAdmin, router]);
 
   useEffect(() => {
-    if (token && isSuperAdmin) {
+    if (accessToken && isSuperAdmin) {
       fetchOrganizations();
     }
-  }, [token, isSuperAdmin]);
+  }, [accessToken, isSuperAdmin]);
 
   const fetchOrganizations = async () => {
     try {
       const res = await fetch('/api/admin/organizations', {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${accessToken}` },
       });
       if (res.ok) {
         const data = await res.json();
@@ -80,7 +80,7 @@ export default function AdminOrganizationsPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify(formData),
       });
@@ -113,7 +113,7 @@ export default function AdminOrganizationsPage() {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify(formData),
       });
@@ -141,7 +141,7 @@ export default function AdminOrganizationsPage() {
     try {
       const res = await fetch(`/api/admin/organizations/${orgId}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${accessToken}` },
       });
 
       if (res.ok) {
