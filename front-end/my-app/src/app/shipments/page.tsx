@@ -223,9 +223,8 @@ export default function ShipmentsPage() {
 
     return (
       <span
-        className={`px-2 py-1 text-xs font-medium rounded ${
-          styles[status] || "bg-gray-100"
-        }`}
+        className={`px-2 py-1 text-xs font-medium rounded ${styles[status] || "bg-gray-100"
+          }`}
       >
         {labels[status] || status}
       </span>
@@ -280,9 +279,8 @@ export default function ShipmentsPage() {
         {stats && (
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
             <div
-              className={`bg-white rounded-xl p-4 shadow cursor-pointer ${
-                statusFilter === "" ? "ring-2 ring-blue-500" : ""
-              }`}
+              className={`bg-white rounded-xl p-4 shadow cursor-pointer ${statusFilter === "" ? "ring-2 ring-blue-500" : ""
+                }`}
               onClick={() => setStatusFilter("")}
             >
               <div className="text-2xl font-bold text-gray-800">
@@ -291,9 +289,8 @@ export default function ShipmentsPage() {
               <div className="text-sm text-gray-500">ทั้งหมด</div>
             </div>
             <div
-              className={`bg-white rounded-xl p-4 shadow cursor-pointer ${
-                statusFilter === "pending" ? "ring-2 ring-blue-500" : ""
-              }`}
+              className={`bg-white rounded-xl p-4 shadow cursor-pointer ${statusFilter === "pending" ? "ring-2 ring-blue-500" : ""
+                }`}
               onClick={() => setStatusFilter("pending")}
             >
               <div className="text-2xl font-bold text-gray-600">
@@ -302,9 +299,8 @@ export default function ShipmentsPage() {
               <div className="text-sm text-gray-500">รอส่ง</div>
             </div>
             <div
-              className={`bg-white rounded-xl p-4 shadow cursor-pointer ${
-                statusFilter === "in_transit" ? "ring-2 ring-blue-500" : ""
-              }`}
+              className={`bg-white rounded-xl p-4 shadow cursor-pointer ${statusFilter === "in_transit" ? "ring-2 ring-blue-500" : ""
+                }`}
               onClick={() => setStatusFilter("in_transit")}
             >
               <div className="text-2xl font-bold text-blue-600">
@@ -313,9 +309,8 @@ export default function ShipmentsPage() {
               <div className="text-sm text-gray-500">กำลังส่ง</div>
             </div>
             <div
-              className={`bg-white rounded-xl p-4 shadow cursor-pointer ${
-                statusFilter === "partial" ? "ring-2 ring-blue-500" : ""
-              }`}
+              className={`bg-white rounded-xl p-4 shadow cursor-pointer ${statusFilter === "partial" ? "ring-2 ring-blue-500" : ""
+                }`}
               onClick={() => setStatusFilter("partial")}
             >
               <div className="text-2xl font-bold text-yellow-600">
@@ -324,9 +319,8 @@ export default function ShipmentsPage() {
               <div className="text-sm text-gray-500">ส่งบางส่วน</div>
             </div>
             <div
-              className={`bg-white rounded-xl p-4 shadow cursor-pointer ${
-                statusFilter === "delivered" ? "ring-2 ring-blue-500" : ""
-              }`}
+              className={`bg-white rounded-xl p-4 shadow cursor-pointer ${statusFilter === "delivered" ? "ring-2 ring-blue-500" : ""
+                }`}
               onClick={() => setStatusFilter("delivered")}
             >
               <div className="text-2xl font-bold text-green-600">
@@ -426,15 +420,15 @@ export default function ShipmentsPage() {
       {/* Create Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        {/* Backdrop */}
-        <div
-          className="absolute inset-0 bg-black/30 backdrop-blur-sm"
-          onClick={() =>{
-            setShowCreateModal(false);
-            setFormError("")
-          }}
-        />
-          
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/30 backdrop-blur-sm"
+            onClick={() => {
+              setShowCreateModal(false);
+              setFormError("")
+            }}
+          />
+
           <div className="relative bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
             <h2 className="text-xl font-bold mb-4">สร้าง Shipment ใหม่</h2>
 
@@ -557,7 +551,17 @@ export default function ShipmentsPage() {
       {/* Detail Modal */}
       {showDetailModal && selectedShipment && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl max-w-2xl w-full p-6 max-h-[80vh] overflow-y-auto">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/30 backdrop-blur-sm"
+            onClick={() => {
+              setShowDetailModal(false);
+              setSelectedShipment(null);
+            }}
+          />
+
+          {/* Modal Content */}
+          <div className="relative bg-white rounded-2xl shadow-xl max-w-2xl w-full p-6 max-h-[80vh] overflow-y-auto">
             <div className="flex justify-between items-start mb-4">
               <div>
                 <h2 className="text-xl font-bold">

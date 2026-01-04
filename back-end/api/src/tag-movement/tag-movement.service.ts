@@ -1,6 +1,7 @@
 // src/tag-movement/tag-movement.service.ts
-import { Injectable } from '@nestjs/common';
+import { forwardRef, Inject, Injectable } from '@nestjs/common';
 import { MongoClient, ObjectId } from 'mongodb';
+import { ShipmentsService } from "../shipments/shipments.service";
 
 export interface TagMovement {
   _id?: ObjectId;
@@ -27,7 +28,10 @@ export interface MovementSummary {
 export class TagMovementService {
   private db: any;
 
-  constructor() {
+  constructor(
+    @Inject(forwardRef(() => ShipmentsService))
+    private shipmentsService: ShipmentsService,
+  ) {
     const mongoUrl = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017';
     const dbName = process.env.MONGO_DB || 'AssetTag';
 
@@ -45,7 +49,6 @@ export class TagMovementService {
       });
   }
 
-  // สร้าง indexes สำหรับ query ที่เร็วขึ้น
   private async ensureIndexes() {
     try {
       const collection = this.db.collection('TagMovements');
@@ -73,13 +76,14 @@ export class TagMovementService {
     };
 
     const result = await this.db.collection('TagMovements').insertOne(doc);
-    
+
     console.log(`[TagMovementService] Recorded ${movement.Action} for tag ${movement.TagUid} at ${movement.WarehouseName}`);
-    
+
     return { ...doc, _id: result.insertedId };
   }
 
   // บันทึก IN - เมื่อ tag เข้า warehouse
+  // แก้ไข recordIN
   async recordIN(
     orgId: number,
     tagUid: string,
@@ -89,7 +93,7 @@ export class TagMovementService {
     sourceType: string = 'M5',
     shipmentId?: string,
   ): Promise<TagMovement> {
-    return this.recordMovement({
+    const movement = await this.recordMovement({
       OrgId: orgId,
       TagUid: tagUid,
       Action: 'IN',
@@ -100,9 +104,19 @@ export class TagMovementService {
       SourceType: sourceType,
       ShipmentId: shipmentId,
     });
+
+    // 🆕 เชื่อม Shipment
+    await this.shipmentsService.onTagMovement(
+      tagUid,
+      'IN',
+      parseInt(warehouseId),
+      orgId,
+    );
+
+    return movement;
   }
 
-  // บันทึก OUT - เมื่อ tag ออกจาก warehouse
+  // แก้ไข recordOUT
   async recordOUT(
     orgId: number,
     tagUid: string,
@@ -112,7 +126,7 @@ export class TagMovementService {
     sourceType: string = 'M5',
     shipmentId?: string,
   ): Promise<TagMovement> {
-    return this.recordMovement({
+    const movement = await this.recordMovement({
       OrgId: orgId,
       TagUid: tagUid,
       Action: 'OUT',
@@ -123,6 +137,16 @@ export class TagMovementService {
       SourceType: sourceType,
       ShipmentId: shipmentId,
     });
+
+    // 🆕 เชื่อม Shipment
+    await this.shipmentsService.onTagMovement(
+      tagUid,
+      'OUT',
+      parseInt(warehouseId),
+      orgId,
+    );
+
+    return movement;
   }
 
   // ==================== READ ====================
@@ -243,10 +267,10 @@ export class TagMovementService {
 
     const totalIn = movements.filter((m: TagMovement) => m.Action === 'IN').length;
     const totalOut = movements.filter((m: TagMovement) => m.Action === 'OUT').length;
-    const todayIn = movements.filter((m: TagMovement) => 
+    const todayIn = movements.filter((m: TagMovement) =>
       m.Action === 'IN' && new Date(m.Timestamp) >= today
     ).length;
-    const todayOut = movements.filter((m: TagMovement) => 
+    const todayOut = movements.filter((m: TagMovement) =>
       m.Action === 'OUT' && new Date(m.Timestamp) >= today
     ).length;
 

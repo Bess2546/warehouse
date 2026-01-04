@@ -178,8 +178,8 @@ export class TagService {
 
     return this.db
       .collection('TagLastSeenProcessed')
-      .find({filter})
-      .sort({ LastSeenTime: -1 })
+      .find(filter)
+      .sort({ EventTime: -1 })
       .toArray();
   }
 

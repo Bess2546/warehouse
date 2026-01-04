@@ -224,6 +224,58 @@ export class ShipmentsService {
     }
   }
 
+  async onTagMovement(
+  tagUid: string,
+  action: 'IN' | 'OUT',
+  warehouseId: number,
+  orgId: number,
+): Promise<void> {
+  
+  const items = await this.shipmentItemRepository
+    .createQueryBuilder('item')
+    .leftJoinAndSelect('item.shipment', 'shipment')
+    .leftJoinAndSelect('shipment.originWarehouse', 'origin')
+    .leftJoinAndSelect('shipment.destinationWarehouse', 'destination')
+    .where('item.tagUid = :tagUid', { tagUid })
+    .andWhere('item.status NOT IN (:...itemStatuses)', {
+      itemStatuses: [ShipmentItemStatus.DELIVERED],
+    })
+    .andWhere('shipment.status NOT IN (:...shipmentStatuses)', {
+      shipmentStatuses: [ShipmentStatus.DELIVERED, ShipmentStatus.CANCELLED],
+    })
+    .getMany();
+
+  if (items.length === 0) {
+    console.log(`[Shipments] Tag ${tagUid} not in any active shipment`);
+    return;
+  }
+
+  for (const item of items) {
+    const shipment = item.shipment;
+    const originId = shipment.originWarehouse?.id;
+    const destinationId = shipment.destinationWarehouse?.id;
+
+    // OUT จากคลังต้นทาง → in_transit
+    if (action === 'OUT' && warehouseId === originId) {
+      item.status = ShipmentItemStatus.IN_TRANSIT;
+      item.exitedAt = new Date();
+      await this.shipmentItemRepository.save(item);
+      console.log(`[Shipments] Tag ${tagUid} exited origin warehouse → in_transit`);
+    }
+
+    // IN ที่คลังปลายทาง → delivered
+    if (action === 'IN' && warehouseId === destinationId) {
+      item.status = ShipmentItemStatus.DELIVERED;
+      item.arrivedAt = new Date();
+      await this.shipmentItemRepository.save(item);
+      console.log(`[Shipments] Tag ${tagUid} arrived at destination → delivered`);
+    }
+
+    // คำนวณ Shipment status ใหม่
+    await this.recalculateShipmentStatus(shipment.id);
+  }
+}
+
   // คำนวณ Shipment Status ใหม่จาก Items
   async recalculateShipmentStatus(shipmentId: number): Promise<void> {
     const shipment = await this.findOne(shipmentId);
