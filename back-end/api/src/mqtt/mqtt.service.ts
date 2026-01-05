@@ -11,6 +11,7 @@ import { macToTagUid } from '../common/source-type';
 export class MqttService implements OnModuleInit {
   private readonly logger = new Logger(MqttService.name);
   private client: MqttClient;
+  private isReady = false;
 
   constructor(
     private readonly tagService: TagService,
@@ -22,19 +23,35 @@ export class MqttService implements OnModuleInit {
   }
 
   onModuleInit() {
-    this.logger.log('Connecting to MQTT...');
+    this.logger.log('Waiting for services to be ready...');
 
+    // รอ 5 วินาทีให้ MongoDB connections พร้อม
+    setTimeout(() => {
+      this.logger.log('Connecting to MQTT...');
+      this.connectMqtt();
+    }, 10000);
+  }
+
+  private connectMqtt() {
     this.client = connect(process.env.MQTT_URL || 'mqtt://127.0.0.1:1883');
 
     this.client.on('connect', () => {
       this.logger.log('MQTT connected');
       this.client.subscribe('warehouse/ble/+/snapshot', (err) => {
         if (err) this.logger.error('Subscribe error:', err);
-        else this.logger.log('Subscribed: warehouse/ble/+/snapshot');
+        else {
+          this.logger.log('Subscribed: warehouse/ble/+/snapshot');
+          this.isReady = true;
+        }
       });
     });
 
     this.client.on('message', async (topic, msg) => {
+      if (!this.isReady) {
+        this.logger.debug('Not ready yet, skipping message');
+        return;
+      }
+      
       const text = msg.toString();
       this.logger.debug(`Message: ${topic} ${text}`);
 
@@ -49,7 +66,6 @@ export class MqttService implements OnModuleInit {
         const eventIso = new Date().toISOString();
         const imei = json.IMEI_ID || json.imei || json.gw_id || null;
         
-        // ดึง Organization จาก PostgreSQL
         const org = imei ? await this.trackerService.getOrganizeByM5(imei) : null;
 
         if (org) {
@@ -60,7 +76,6 @@ export class MqttService implements OnModuleInit {
 
         const orgId = org?.id ?? 0;
 
-        // แปลง tags เป็นรูปแบบมาตรฐาน
         const processedTags = json.tags.map((t: any) => ({
           TagUid: macToTagUid(t.mac),
           Rssi: t.rssi,
@@ -68,7 +83,6 @@ export class MqttService implements OnModuleInit {
           raw: t.raw ?? null,
         }));
 
-        // 1. บันทึกลง TagLastSeenProcessed (MongoDB)
         const unifiedPayload = {
           SourceType: 'M5',
           SourceId: imei,
@@ -78,7 +92,6 @@ export class MqttService implements OnModuleInit {
         };
         await this.tagService.handleGatewaySnapshot(unifiedPayload);
 
-        // 2. ประมวลผล IN/OUT ด้วย debounce logic
         await this.processMovementsWithBuffer(orgId, imei, processedTags);
 
       } catch (err) {
@@ -87,16 +100,12 @@ export class MqttService implements OnModuleInit {
     });
   }
 
-  /**
-   * ประมวลผล IN/OUT ด้วย TagScanBufferService
-   */
   private async processMovementsWithBuffer(
     orgId: number,
     m5DeviceId: string,
     tags: Array<{ TagUid: string; Rssi: number }>,
   ) {
     try {
-      // 1. หา warehouse ที่ M5 นี้ติดตั้งอยู่ (จาก PostgreSQL)
       const warehouse = await this.warehousesService.getWarehouseByM5(m5DeviceId);
 
       if (!warehouse) {
@@ -104,13 +113,11 @@ export class MqttService implements OnModuleInit {
         return;
       }
 
-      // PostgreSQL fields: id, name (ตัวเล็ก)
       const warehouseId = warehouse.id.toString();
       const warehouseName = warehouse.name;
 
       this.logger.debug(`Processing ${tags.length} tags at ${warehouseName}`);
 
-      // 2. ส่งให้ ScanBufferService ประมวลผล
       await this.scanBufferService.processScanSnapshot(
         orgId,
         warehouseId,

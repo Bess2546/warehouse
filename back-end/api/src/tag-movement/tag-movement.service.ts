@@ -1,7 +1,8 @@
 // src/tag-movement/tag-movement.service.ts
 import { forwardRef, Inject, Injectable } from '@nestjs/common';
-import { MongoClient, ObjectId } from 'mongodb';
+import { ObjectId, Db } from 'mongodb';
 import { ShipmentsService } from "../shipments/shipments.service";
+import { MongoService } from "../common/mongo.service";
 
 export interface TagMovement {
   _id?: ObjectId;
@@ -26,30 +27,31 @@ export interface MovementSummary {
 
 @Injectable()
 export class TagMovementService {
-  private db: any;
 
   constructor(
     @Inject(forwardRef(() => ShipmentsService))
     private shipmentsService: ShipmentsService,
+    private mongoService: MongoService,
   ) {
-    const mongoUrl = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017';
-    const dbName = process.env.MONGO_DB || 'AssetTag';
+    this.initIndexes();
+  }
 
-    const mongo = new MongoClient(mongoUrl);
+  private get db(): Db | null {
+    return this.mongoService.getDb();
+  }
 
-    mongo
-      .connect()
-      .then(() => {
-        this.db = mongo.db(dbName);
-        console.log('[TagMovementService] MongoDB ready');
-        this.ensureIndexes();
-      })
-      .catch((err) => {
-        console.error('[TagMovementService] Mongo error:', err);
-      });
+  private async initIndexes() {
+    const ready = await this.mongoService.waitForConnection();
+    if (!ready || !this.db) {
+      console.error('[TagMovementService] Cannot create indexes - DB not ready');
+      return;
+    }
+    await this.ensureIndexes();
   }
 
   private async ensureIndexes() {
+    if (!this.db) return;
+    
     try {
       const collection = this.db.collection('TagMovements');
       await collection.createIndex({ OrgId: 1, TagUid: 1 });
@@ -64,10 +66,10 @@ export class TagMovementService {
 
   // ==================== CREATE ====================
 
-  // บันทึก movement ใหม่
   async recordMovement(movement: Omit<TagMovement, '_id'>): Promise<TagMovement> {
-    if (!this.db) {
-      throw new Error('Database not ready');
+    const ready = await this.mongoService.waitForConnection();
+    if (!ready || !this.db) {
+      throw new Error('Database not ready after retries');
     }
 
     const doc = {
@@ -79,11 +81,9 @@ export class TagMovementService {
 
     console.log(`[TagMovementService] Recorded ${movement.Action} for tag ${movement.TagUid} at ${movement.WarehouseName}`);
 
-    return { ...doc, _id: result.insertedId };
+    return { ...doc, _id: result.insertedId } as TagMovement;
   }
 
-  // บันทึก IN - เมื่อ tag เข้า warehouse
-  // แก้ไข recordIN
   async recordIN(
     orgId: number,
     tagUid: string,
@@ -105,7 +105,6 @@ export class TagMovementService {
       ShipmentId: shipmentId,
     });
 
-    // 🆕 เชื่อม Shipment
     await this.shipmentsService.onTagMovement(
       tagUid,
       'IN',
@@ -116,7 +115,6 @@ export class TagMovementService {
     return movement;
   }
 
-  // แก้ไข recordOUT
   async recordOUT(
     orgId: number,
     tagUid: string,
@@ -138,7 +136,6 @@ export class TagMovementService {
       ShipmentId: shipmentId,
     });
 
-    // 🆕 เชื่อม Shipment
     await this.shipmentsService.onTagMovement(
       tagUid,
       'OUT',
@@ -151,59 +148,61 @@ export class TagMovementService {
 
   // ==================== READ ====================
 
-  // ดึงประวัติ movement ทั้งหมดของ tag
   async getMovementsByTag(orgId: number, tagUid: string, limit: number = 50): Promise<TagMovement[]> {
     if (!this.db) return [];
 
-    return this.db
+    const results = await this.db
       .collection('TagMovements')
       .find({ OrgId: orgId, TagUid: tagUid })
       .sort({ Timestamp: -1 })
       .limit(limit)
       .toArray();
+
+    return results as unknown as TagMovement[];
   }
 
-  // ดึงประวัติ movement ของ warehouse
   async getMovementsByWarehouse(orgId: number, warehouseId: string, limit: number = 50): Promise<TagMovement[]> {
     if (!this.db) return [];
 
-    return this.db
+    const results = await this.db
       .collection('TagMovements')
       .find({ OrgId: orgId, WarehouseId: warehouseId })
       .sort({ Timestamp: -1 })
       .limit(limit)
       .toArray();
+
+    return results as unknown as TagMovement[];
   }
 
-  // ดึง movement ล่าสุดทั้งหมด (สำหรับ dashboard)
   async getRecentMovements(orgId: number, limit: number = 50): Promise<TagMovement[]> {
     if (!this.db) return [];
 
-    return this.db
+    const results = await this.db
       .collection('TagMovements')
       .find({ OrgId: orgId })
       .sort({ Timestamp: -1 })
       .limit(limit)
       .toArray();
+
+    return results as unknown as TagMovement[];
   }
 
-  // ดึง movement ล่าสุดของ tag (รู้ว่าอยู่ที่ไหนล่าสุด)
   async getLastMovement(orgId: number, tagUid: string): Promise<TagMovement | null> {
     if (!this.db) return null;
 
-    return this.db
+    const result = await this.db
       .collection('TagMovements')
       .findOne(
         { OrgId: orgId, TagUid: tagUid },
         { sort: { Timestamp: -1 } }
       );
+
+    return result as unknown as TagMovement | null;
   }
 
-  // ดึง tags ที่อยู่ใน warehouse ตอนนี้
   async getTagsInWarehouse(orgId: number, warehouseId: string): Promise<string[]> {
     if (!this.db) return [];
 
-    // หา last movement ของแต่ละ tag แล้วเช็คว่า IN อยู่ที่ warehouse นี้ไหม
     const pipeline = [
       { $match: { OrgId: orgId } },
       { $sort: { Timestamp: -1 } },
@@ -228,7 +227,6 @@ export class TagMovementService {
 
   // ==================== SUMMARY ====================
 
-  // สรุปข้อมูล movement ของ tag
   async getTagSummary(orgId: number, tagUid: string): Promise<MovementSummary> {
     if (!this.db) {
       return { totalIn: 0, totalOut: 0, currentInWarehouse: 0 };
@@ -237,10 +235,10 @@ export class TagMovementService {
     const movements = await this.db
       .collection('TagMovements')
       .find({ OrgId: orgId, TagUid: tagUid })
-      .toArray();
+      .toArray() as unknown as TagMovement[];
 
-    const totalIn = movements.filter((m: TagMovement) => m.Action === 'IN').length;
-    const totalOut = movements.filter((m: TagMovement) => m.Action === 'OUT').length;
+    const totalIn = movements.filter((m) => m.Action === 'IN').length;
+    const totalOut = movements.filter((m) => m.Action === 'OUT').length;
     const lastMovement = await this.getLastMovement(orgId, tagUid);
 
     return {
@@ -251,7 +249,6 @@ export class TagMovementService {
     };
   }
 
-  // สรุปข้อมูล movement ของ warehouse
   async getWarehouseSummary(orgId: number, warehouseId: string) {
     if (!this.db) {
       return { totalIn: 0, totalOut: 0, currentCount: 0, todayIn: 0, todayOut: 0 };
@@ -263,14 +260,14 @@ export class TagMovementService {
     const movements = await this.db
       .collection('TagMovements')
       .find({ OrgId: orgId, WarehouseId: warehouseId })
-      .toArray();
+      .toArray() as unknown as TagMovement[];
 
-    const totalIn = movements.filter((m: TagMovement) => m.Action === 'IN').length;
-    const totalOut = movements.filter((m: TagMovement) => m.Action === 'OUT').length;
-    const todayIn = movements.filter((m: TagMovement) =>
+    const totalIn = movements.filter((m) => m.Action === 'IN').length;
+    const totalOut = movements.filter((m) => m.Action === 'OUT').length;
+    const todayIn = movements.filter((m) =>
       m.Action === 'IN' && new Date(m.Timestamp) >= today
     ).length;
-    const todayOut = movements.filter((m: TagMovement) =>
+    const todayOut = movements.filter((m) =>
       m.Action === 'OUT' && new Date(m.Timestamp) >= today
     ).length;
 
@@ -285,7 +282,6 @@ export class TagMovementService {
     };
   }
 
-  // สรุป movement ทั้งระบบ
   async getOverallSummary(orgId: number) {
     if (!this.db) {
       return { totalMovements: 0, totalIn: 0, totalOut: 0, todayMovements: 0 };
@@ -320,7 +316,6 @@ export class TagMovementService {
 
   // ==================== FILTER BY DATE ====================
 
-  // ดึง movements ตามช่วงเวลา
   async getMovementsByDateRange(
     orgId: number,
     startDate: Date,
@@ -338,10 +333,12 @@ export class TagMovementService {
       query.WarehouseId = warehouseId;
     }
 
-    return this.db
+    const results = await this.db
       .collection('TagMovements')
       .find(query)
       .sort({ Timestamp: -1 })
       .toArray();
+
+    return results as unknown as TagMovement[];
   }
 }

@@ -23,6 +23,7 @@ import { ShipmentsModule } from './shipments/shipments.module';
 import { Shipment, ShipmentItem } from "./shipments/entities";
 import { LoggerMiddleware, RateLimitMiddleware } from './common/middleware';
 import { WarehouseModule } from './warehouse/warehouse.module';
+import { CommonModule } from "./common/common.module";
 
 @Module({
   imports: [
@@ -62,6 +63,7 @@ import { WarehouseModule } from './warehouse/warehouse.module';
     TagMovementModule,
     WarehouseModule,
     ShipmentsModule,
+    CommonModule,
   ],
 
   controllers: [TimelineController],
