@@ -6,16 +6,13 @@ import { resolve } from 'path';
 
   // ==================== CONFIG ====================
   export const MOVEMENT_CONFIG = {
-    // RSSI Threshold - สัญญาณต้องแรงกว่านี้ถึงจะนับ
-    RSSI_THRESHOLD: -80,          // dBm (ปรับได้ -70 ถึง -90)
+    RSSI_THRESHOLD: -80,        
     
-    // IN Detection - ต้องเห็นกี่ครั้งถึงจะนับว่า IN
-    IN_COUNT_THRESHOLD: 3,        // เห็น 3 ครั้งขึ้นไป
-    IN_TIME_WINDOW_SEC: 60,       // ภายใน 60 วินาที
+    IN_COUNT_THRESHOLD: 3,        
+    IN_TIME_WINDOW_SEC: 60,       
     
-    // OUT Detection - ไม่เห็นกี่ครั้งถึงจะนับว่า OUT
-    OUT_COUNT_THRESHOLD: 3,       // ไม่เห็น 5 ครั้งติดต่อกัน
-    OUT_TIMEOUT_SEC: 60,         // หรือไม่เห็นนาน 2 นาที
+    OUT_COUNT_THRESHOLD: 8,      
+    OUT_TIMEOUT_SEC: 120,        
     
     // Scan interval (M5 ส่งทุกกี่วินาที)
     SCAN_INTERVAL_SEC: 10,
@@ -207,6 +204,11 @@ import { resolve } from 'path';
         // Reset MissedCount เมื่อเห็นอีกครั้ง
         if (rssiValid) {
           update.$set.MissedCount = 0;
+
+          if (buffer.Status === 'PENDING_OUT') {
+            update.$set.Status = 'CONFIRMED_IN';
+            this.logger.debug(`🔄 [RECOVERED] Tag ${tagUid} back to CONFIRMED_IN at ${warehouseName}`);
+          }
         }
 
         await collection.updateOne(filter, update);
@@ -260,16 +262,11 @@ import { resolve } from 'path';
      * เช็คว่า tag ถึง threshold IN หรือยัง
      */
     private async checkInThreshold(buffer: TagScanBuffer) {
-      if (buffer.Status === 'CONFIRMED_IN') {
-        // บันทึก IN ไปแล้ว ไม่ต้องทำซ้ำ
+      if (buffer.Status === 'CONFIRMED_IN' || buffer.Status === 'PENDING_OUT') {
         return;
       }
 
       const { IN_COUNT_THRESHOLD, RSSI_THRESHOLD } = MOVEMENT_CONFIG;
-
-      // เงื่อนไข IN:
-      // 1. เห็น >= IN_COUNT_THRESHOLD ครั้ง
-      // 2. RSSI เฉลี่ย >= RSSI_THRESHOLD
       if (
         buffer.SeenCount >= IN_COUNT_THRESHOLD &&
         buffer.AvgRssi >= RSSI_THRESHOLD
@@ -304,9 +301,6 @@ import { resolve } from 'path';
       }
     }
 
-    /**
-     * เช็คว่า tag ถึง threshold OUT หรือยัง
-     */
     private async checkOutThreshold(
       buffer: TagScanBuffer,
       missedCount: number,

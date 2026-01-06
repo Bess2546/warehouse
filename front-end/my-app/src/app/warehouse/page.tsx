@@ -1,7 +1,7 @@
 // src/app/warehouse/page.tsx
 'use client';
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -207,6 +207,51 @@ function ActionBadge({ action }: { action: 'IN' | 'OUT' }) {
   );
 }
 
+// ==================== WAREHOUSE DROPDOWN ====================
+
+function WarehouseDropdown({
+  warehouses,
+  selectedWarehouse,
+  onSelect,
+}: {
+  warehouses: { id: string; name: string }[];
+  selectedWarehouse: string;
+  onSelect: (warehouseId: string) => void;
+}) {
+  return (
+    <div className="relative">
+      <select
+        value={selectedWarehouse}
+        onChange={(e) => onSelect(e.target.value)}
+        className="appearance-none pl-10 pr-10 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white cursor-pointer min-w-[200px]"
+      >
+        <option value="ALL">🏭 ทุกคลังสินค้า</option>
+        {warehouses.map((wh) => (
+          <option key={wh.id} value={wh.id}>
+            📦 {wh.name}
+          </option>
+        ))}
+      </select>
+      <svg
+        className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+      </svg>
+      <svg
+        className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+      </svg>
+    </div>
+  );
+}
+
 // ==================== TABS CONTENT ====================
 
 function TagsTab({ tags, loading, formatTime }: { tags: Tag[]; loading: boolean; formatTime: (date: Date | string | null) => string }) {
@@ -342,6 +387,18 @@ function MovementsTab({
   formatTime: (date: Date | string | null) => string;
 }) {
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedWarehouse, setSelectedWarehouse] = useState<string>('ALL');
+
+  // ดึงรายการคลังจาก movements (unique)
+  const warehouses = useMemo(() => {
+    const warehouseMap = new Map<string, string>();
+    movements.forEach((m) => {
+      if (m.WarehouseId && m.WarehouseName) {
+        warehouseMap.set(m.WarehouseId, m.WarehouseName);
+      }
+    });
+    return Array.from(warehouseMap.entries()).map(([id, name]) => ({ id, name }));
+  }, [movements]);
 
   const formatRelativeTime = (date: Date | string) => {
     const now = new Date();
@@ -358,7 +415,11 @@ function MovementsTab({
   };
 
   const filteredMovements = movements.filter((m) => {
+    // Filter by warehouse
+    if (selectedWarehouse !== 'ALL' && m.WarehouseId !== selectedWarehouse) return false;
+    // Filter by action
     if (filterAction !== 'ALL' && m.Action !== filterAction) return false;
+    // Filter by search
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       const matchTag = m.TagUid.toLowerCase().includes(query);
@@ -368,20 +429,40 @@ function MovementsTab({
     return true;
   });
 
+  // คำนวณ stats ตาม filter ที่เลือก
+  const filteredStats = useMemo(() => {
+    const filtered = selectedWarehouse === 'ALL' 
+      ? movements 
+      : movements.filter(m => m.WarehouseId === selectedWarehouse);
+    
+    return {
+      totalIn: filtered.filter(m => m.Action === 'IN').length,
+      totalOut: filtered.filter(m => m.Action === 'OUT').length,
+      total: filtered.length,
+    };
+  }, [movements, selectedWarehouse]);
+
   if (loading) return <LoadingSpinner text="Loading movements..." />;
 
   return (
     <>
       {/* Filters */}
       <div className="flex flex-wrap gap-4 p-4 border-b border-gray-100">
+        {/* Warehouse Dropdown */}
+        <WarehouseDropdown
+          warehouses={warehouses}
+          selectedWarehouse={selectedWarehouse}
+          onSelect={setSelectedWarehouse}
+        />
+
         {/* Search Input */}
         <div className="relative">
           <input
             type="text"
-            placeholder="ค้นหา Tag UID หรือ Warehouse..."
+            placeholder="ค้นหา Tag UID..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10 pr-10 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent w-64"
+            className="pl-10 pr-10 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent w-56"
           />
           <svg
             className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
@@ -420,7 +501,14 @@ function MovementsTab({
         </div>
 
         {/* Result count */}
-        <div className="flex items-center ml-auto">
+        <div className="flex items-center ml-auto gap-4">
+          {selectedWarehouse !== 'ALL' && (
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-green-600">IN: {filteredStats.totalIn}</span>
+              <span className="text-gray-300">|</span>
+              <span className="text-red-600">OUT: {filteredStats.totalOut}</span>
+            </div>
+          )}
           <span className="text-sm text-gray-400">แสดง {filteredMovements.length} รายการ</span>
         </div>
       </div>
@@ -433,7 +521,7 @@ function MovementsTab({
             </svg>
           }
           title="No movements found"
-          subtitle="Waiting for IN/OUT events..."
+          subtitle={selectedWarehouse !== 'ALL' ? "ไม่พบข้อมูลในคลังที่เลือก" : "Waiting for IN/OUT events..."}
         />
       ) : (
         <div className="overflow-x-auto">
