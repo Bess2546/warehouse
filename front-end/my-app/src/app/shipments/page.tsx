@@ -4,7 +4,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
-import Link from "next/link";
 
 interface Warehouse {
   id: number;
@@ -223,8 +222,9 @@ export default function ShipmentsPage() {
 
     return (
       <span
-        className={`px-2 py-1 text-xs font-medium rounded ${styles[status] || "bg-gray-100"
-          }`}
+        className={`px-2 py-1 text-xs font-medium rounded ${
+          styles[status] || "bg-gray-100"
+        }`}
       >
         {labels[status] || status}
       </span>
@@ -241,6 +241,32 @@ export default function ShipmentsPage() {
     });
   };
 
+  function BackButton({className = ""}: {className?: string}) {
+    const router = useRouter();
+    return (
+      <button
+        onClick={() => router.push("/dashboard")}
+        className={`flex items-center gap-2 px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 rounded-lg px-3 py-1 transition-colors ${className}`}
+
+      >
+        <svg
+          className="w-5 h-5"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M15 19l-7-7 7-7"
+          />
+        </svg>
+        <span className="font-medium">กลับ</span>
+      </button>
+    );
+  }
+
   if (isLoading || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
@@ -254,13 +280,8 @@ export default function ShipmentsPage() {
       {/* Header */}
       <header className="bg-white shadow">
         <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <Link
-              href="/dashboard"
-              className="text-gray-500 hover:text-gray-700"
-            >
-              ← กลับ
-            </Link>
+          <div className="flex items-baseline gap-3">
+              <BackButton  className="px-2 py-1"/>
             <h1 className="text-xl font-bold text-gray-800">
               📦 จัดการการขนส่ง
             </h1>
@@ -279,8 +300,9 @@ export default function ShipmentsPage() {
         {stats && (
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
             <div
-              className={`bg-white rounded-xl p-4 shadow cursor-pointer ${statusFilter === "" ? "ring-2 ring-blue-500" : ""
-                }`}
+              className={`bg-white rounded-xl p-4 shadow cursor-pointer ${
+                statusFilter === "" ? "ring-2 ring-blue-500" : ""
+              }`}
               onClick={() => setStatusFilter("")}
             >
               <div className="text-2xl font-bold text-gray-800">
@@ -289,8 +311,9 @@ export default function ShipmentsPage() {
               <div className="text-sm text-gray-500">ทั้งหมด</div>
             </div>
             <div
-              className={`bg-white rounded-xl p-4 shadow cursor-pointer ${statusFilter === "pending" ? "ring-2 ring-blue-500" : ""
-                }`}
+              className={`bg-white rounded-xl p-4 shadow cursor-pointer ${
+                statusFilter === "pending" ? "ring-2 ring-blue-500" : ""
+              }`}
               onClick={() => setStatusFilter("pending")}
             >
               <div className="text-2xl font-bold text-gray-600">
@@ -299,8 +322,9 @@ export default function ShipmentsPage() {
               <div className="text-sm text-gray-500">รอส่ง</div>
             </div>
             <div
-              className={`bg-white rounded-xl p-4 shadow cursor-pointer ${statusFilter === "in_transit" ? "ring-2 ring-blue-500" : ""
-                }`}
+              className={`bg-white rounded-xl p-4 shadow cursor-pointer ${
+                statusFilter === "in_transit" ? "ring-2 ring-blue-500" : ""
+              }`}
               onClick={() => setStatusFilter("in_transit")}
             >
               <div className="text-2xl font-bold text-blue-600">
@@ -309,8 +333,9 @@ export default function ShipmentsPage() {
               <div className="text-sm text-gray-500">กำลังส่ง</div>
             </div>
             <div
-              className={`bg-white rounded-xl p-4 shadow cursor-pointer ${statusFilter === "partial" ? "ring-2 ring-blue-500" : ""
-                }`}
+              className={`bg-white rounded-xl p-4 shadow cursor-pointer ${
+                statusFilter === "partial" ? "ring-2 ring-blue-500" : ""
+              }`}
               onClick={() => setStatusFilter("partial")}
             >
               <div className="text-2xl font-bold text-yellow-600">
@@ -319,8 +344,9 @@ export default function ShipmentsPage() {
               <div className="text-sm text-gray-500">ส่งบางส่วน</div>
             </div>
             <div
-              className={`bg-white rounded-xl p-4 shadow cursor-pointer ${statusFilter === "delivered" ? "ring-2 ring-blue-500" : ""
-                }`}
+              className={`bg-white rounded-xl p-4 shadow cursor-pointer ${
+                statusFilter === "delivered" ? "ring-2 ring-blue-500" : ""
+              }`}
               onClick={() => setStatusFilter("delivered")}
             >
               <div className="text-2xl font-bold text-green-600">
@@ -425,7 +451,7 @@ export default function ShipmentsPage() {
             className="absolute inset-0 bg-black/30 backdrop-blur-sm"
             onClick={() => {
               setShowCreateModal(false);
-              setFormError("")
+              setFormError("");
             }}
           />
 
