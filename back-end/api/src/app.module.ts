@@ -24,6 +24,7 @@ import { Shipment, ShipmentItem } from "./shipments/entities";
 import { LoggerMiddleware, RateLimitMiddleware } from './common/middleware';
 import { WarehouseModule } from './warehouse/warehouse.module';
 import { CommonModule } from "./common/common.module";
+import { ReportsModule } from "./reports/reports.module";
 
 @Module({
   imports: [
@@ -64,6 +65,7 @@ import { CommonModule } from "./common/common.module";
     WarehouseModule,
     ShipmentsModule,
     CommonModule,
+    ReportsModule,
   ],
 
   controllers: [TimelineController],
